@@ -30,7 +30,7 @@ class _CarouselPageState extends State<CarouselPage> {
       color: Colors.green,
     ),
     PageModel(
-      title: 'Hazard Detection',
+      title: 'Text Detection',
       content: 'Content 3',
       color: Colors.orange,
     ),
@@ -135,8 +135,57 @@ class _CarouselPageState extends State<CarouselPage> {
               ),
             ),
           ),
+          Positioned(
+            bottom: 100,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: SizedBox(
+                height: 80,
+                width: 80,
+                child: FloatingActionButton(
+                  backgroundColor: Colors.white.withOpacity(0.7),
+                  onPressed: () {
+                    switch (_currentPage) {
+                      case 0: // Object Detection
+                        _startObjectDetection();
+                        break;
+                      case 1: // Scene Detection
+                        _startSceneDetection();
+                        break;
+                      case 2: // Text Detection
+                        _startTextDetection();
+                        break;
+                    }
+                  },
+                  shape: const CircleBorder(),
+                  child: Icon(
+                    Icons.play_arrow,
+                    color: _pages[_currentPage].color,
+                    size: 40,
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
+  }
+  
+
+  void _startObjectDetection() {
+    // Implement object detection logic
+    print('Starting Object Detection');
+  }
+
+  void _startSceneDetection() {
+    // Implement scene detection logic
+    print('Starting Scene Detection');
+  }
+
+  void _startTextDetection() {
+    // Implement text detection logic
+    print('Starting Text Detection');
   }
 }
