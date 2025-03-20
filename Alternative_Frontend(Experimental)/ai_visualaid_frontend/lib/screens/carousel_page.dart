@@ -62,7 +62,29 @@ class _CarouselPageState extends State<CarouselPage> {
             future: _initializeControllerFuture,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.done) {
-                return CameraPreview(_cameraController);
+                final mediaQuery = MediaQuery.of(context);
+                final screenWidth = mediaQuery.size.width;
+                final screenHeight = mediaQuery.size.height;
+                final cameraAspectRatio = _cameraController.value.aspectRatio;
+                
+                return Center(
+                  child: OverflowBox(
+                    maxWidth: double.infinity,
+                    maxHeight: double.infinity,
+                    child: SizedBox(
+                      width: screenWidth,
+                      height: screenHeight,
+                      child: FittedBox(
+                        fit: BoxFit.cover,
+                        child: SizedBox(
+                          width: screenWidth / cameraAspectRatio,
+                          height: screenHeight,
+                          child: CameraPreview(_cameraController),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
               }
               return const Center(child: CircularProgressIndicator());
             },
