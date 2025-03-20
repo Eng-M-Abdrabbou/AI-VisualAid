@@ -136,29 +136,53 @@ class _CarouselPageState extends State<CarouselPage> {
             ),
           ),
           Positioned(
-            bottom: 100,
+            bottom: 20,
             left: 0,
             right: 0,
             child: Center(
-              child: SizedBox(
-                height: 80,
-                width: 80,
-                child: FloatingActionButton(
-                  backgroundColor: Colors.white.withOpacity(0.7),
-                  onPressed: () {
-                    switch (_currentPage) {
-                      case 0: // Object Detection
-                        _startObjectDetection();
-                        break;
-                      case 1: // Scene Detection
-                        _startSceneDetection();
-                        break;
-                      case 2: // Text Detection
-                        _startTextDetection();
-                        break;
-                    }
-                  },
-                  shape: const CircleBorder(),
+              child: GestureDetector(
+                onTap: () {
+                  switch (_currentPage) {
+                    case 0: // Object Detection
+                      _startObjectDetection();
+                      break;
+                    case 1: // Scene Detection
+                      _startSceneDetection();
+                      break;
+                    case 2: // Text Detection
+                      _startTextDetection();
+                      break;
+                  }
+                },
+                onLongPress: () {
+                  switch (_currentPage) {
+                    case 0: // Object Detection
+                      print(' Object Detection');
+                      break;
+                    case 1: // Scene Detection
+                      print(' Scene Detection');
+                      break;
+                    case 2: // Text Detection
+                      print(' Text Detection');
+                      break;
+                  }
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Long press detected!')),
+                  );
+                },
+                child: Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        spreadRadius: 2,
+                        blurRadius: 5,
+                      ),
+                    ],
+                  ),
+                  padding: EdgeInsets.all(10),
                   child: Icon(
                     Icons.play_arrow,
                     color: _pages[_currentPage].color,
