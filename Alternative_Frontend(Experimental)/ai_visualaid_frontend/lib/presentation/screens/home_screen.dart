@@ -41,11 +41,13 @@ class _HomeScreenState extends State<HomeScreen> {
   // --- Use Direct Types ---
   final SpeechToText _speechToText = SpeechToText();
   bool _isListening = false;
-  // Official example uses this flag, let's keep it for consistency
   bool _speechEnabled = false;
 
   final WebSocketService _webSocketService = WebSocketService();
   late List<FeatureConfig> _features;
+
+  // To potentially display results more persistently if needed later
+  String _lastDetectionResult = "";
 
   @override
   void initState() {
@@ -57,22 +59,20 @@ class _HomeScreenState extends State<HomeScreen> {
         color: config.color,
         voiceCommandKeywords: config.voiceCommandKeywords,
         pageBuilder: config.pageBuilder,
+        // Action is correctly set to trigger image capture and sending
         action: () => _handleFeatureAction(config.id),
       );
     }).toList();
 
     _initializeCameraController();
-    // Call the separate init method like the official example
     _initSpeech();
-    _initializeWebSocket();
+    _initializeWebSocket(); // Initialize WebSocket connection and listener
   }
 
-  // --- Separate Init method like official example ---
   void _initSpeech() async {
-    // Initialize with status and error listeners
     _speechEnabled = await _speechToText.initialize(
         onStatus: _handleSpeechStatus,
-        onError: _handleSpeechError, // Signature uses direct type
+        onError: _handleSpeechError,
         debugLogging: kDebugMode);
     if (!_speechEnabled) {
       debugPrint('Speech recognition not available during init.');
@@ -84,24 +84,23 @@ class _HomeScreenState extends State<HomeScreen> {
     } else {
        debugPrint('Speech recognition initialized successfully.');
     }
-    // Update state if needed after initialization completes
-    if (mounted) {
-       setState(() {});
-    }
+    if (mounted) setState(() {});
   }
-  // --- End Init method ---
 
 
   void _initializeCameraController() {
      if (widget.camera != null) {
       _cameraController = CameraController(
         widget.camera!,
-        ResolutionPreset.max,
+        // Consider using a lower preset initially for faster processing/transfer
+        // ResolutionPreset.high or ResolutionPreset.medium might be sufficient
+        ResolutionPreset.high,
         enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.jpeg,
+        imageFormatGroup: ImageFormatGroup.jpeg, // JPEG is usually smaller
       );
       _initializeControllerFuture = _cameraController!.initialize().then((_) {
         if (!mounted) return;
+        debugPrint("Camera initialized successfully.");
         setState(() {});
       }).catchError((error) {
         debugPrint("Camera initialization error: $error");
@@ -118,62 +117,98 @@ class _HomeScreenState extends State<HomeScreen> {
            const SnackBar(content: Text("No camera available")),
          );
       }
+      // Optionally, disable features requiring camera
     }
   }
 
   void _initializeWebSocket() {
+     debugPrint("[HomeScreen] Initializing WebSocket listener...");
      _webSocketService.responseStream.listen(
-      (data) {
+      (data) { // data is expected to be Map<String, dynamic>
         debugPrint('[HomeScreen] WebSocket Received: $data');
-        // TODO: Handle received data (e.g., display results)
+
+        // *** UPDATED/REFINED LISTENER LOGIC ***
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Server response: ${data['result'] ?? 'OK'}")),
-          );
+          // Check if the expected 'result' key exists and is a String
+          if (data.containsKey('result') && data['result'] is String) {
+            final resultText = data['result'] as String;
+             setState(() {
+               _lastDetectionResult = resultText; // Store result if needed elsewhere
+             });
+             ScaffoldMessenger.of(context).removeCurrentSnackBar(); // Remove previous messages
+             ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text("Result: $resultText"),
+                duration: const Duration(seconds: 4), // Show result longer
+              ),
+            );
+          } else {
+             // Handle cases where 'result' key is missing or not a string
+             debugPrint('[HomeScreen] Received unexpected data format from server: $data');
+             ScaffoldMessenger.of(context).removeCurrentSnackBar();
+             ScaffoldMessenger.of(context).showSnackBar(
+               const SnackBar(content: Text("Received unexpected data format from server.")),
+             );
+          }
         }
+        // ****************************************
+
       },
       onError: (error) {
         debugPrint('[HomeScreen] WebSocket Error: $error');
         String errorMessage = "Connection Error";
         if (error is WebSocketChannelException) {
           errorMessage = "Connection Error: ${error.message ?? 'WebSocket issue'}";
-        } else {
+        } else if (error is ArgumentError) { // Catch config errors from connect()
+           errorMessage = error.message;
+        }
+         else {
           errorMessage = "Connection Error: ${error.toString()}";
         }
 
         if (mounted) {
+          ScaffoldMessenger.of(context).removeCurrentSnackBar();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(errorMessage)),
           );
         }
       },
       onDone: () {
-        debugPrint('[HomeScreen] WebSocket connection closed.');
+        debugPrint('[HomeScreen] WebSocket connection closed by server.');
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Disconnected from server.')),
+           ScaffoldMessenger.of(context).removeCurrentSnackBar();
+           ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Disconnected from server. Trying to reconnect...')),
           );
+           // Optional: Trigger a reconnect attempt visually or let the service handle it
+           // _webSocketService.connect(); // Be careful not to create rapid reconnect loops
         }
       },
+      cancelOnError: false // Keep listening even after errors
     );
+    // Initiate the connection
     _webSocketService.connect();
   }
 
   @override
   void dispose() {
+    debugPrint("[HomeScreen] Disposing...");
     _pageController.dispose();
     _cameraController?.dispose();
-    // Stop listening if active before cancelling
     if (_speechToText.isListening) {
        _speechToText.stop();
     }
-    _speechToText.cancel(); // Recommended by docs/examples
-    _webSocketService.close();
+    _speechToText.cancel();
+    _webSocketService.close(); // Close WebSocket connection and stream
+    debugPrint("[HomeScreen] Dispose complete.");
     super.dispose();
   }
 
+   // This function sends the image and the correct feature type to the backend
    void _handleFeatureAction(String featureId) async {
      debugPrint('Action triggered for feature: $featureId');
+
+     // 1. Check Camera
      if (_cameraController == null || !_cameraController!.value.isInitialized) {
        debugPrint('Camera not ready for action.');
        if (mounted) {
@@ -183,160 +218,130 @@ class _HomeScreenState extends State<HomeScreen> {
        }
        return;
      }
+     if (_cameraController!.value.isTakingPicture) {
+       debugPrint('Camera busy, skipping action.');
+       // Optionally show a message that camera is busy
+       // ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Camera busy...")));
+       return;
+     }
 
+
+     // 2. Check WebSocket Connection
      if (!_webSocketService.isConnected) {
        debugPrint('WebSocket not connected for action.');
        if (mounted) {
          ScaffoldMessenger.of(context).showSnackBar(
-           const SnackBar(content: Text("Not connected to server")),
+           const SnackBar(content: Text("Not connected to server. Attempting to connect...")),
          );
        }
-       _webSocketService.connect();
+       _webSocketService.connect(); // Attempt to reconnect
        return;
      }
 
+     // 3. Capture and Send Image
      try {
-       if (_cameraController!.value.isTakingPicture) {
-         debugPrint('Camera busy, skipping action.');
-         return;
-       }
-
        if (mounted) {
+         ScaffoldMessenger.of(context).removeCurrentSnackBar();
          ScaffoldMessenger.of(context).showSnackBar(
            const SnackBar(content: Text("Capturing..."), duration: Duration(seconds: 1)),
          );
        }
+
        final XFile imageFile = await _cameraController!.takePicture();
        debugPrint('Picture taken: ${imageFile.path}');
 
        if (mounted) {
-         ScaffoldMessenger.of(context).showSnackBar(
+          ScaffoldMessenger.of(context).removeCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
            const SnackBar(content: Text("Processing..."), duration: Duration(seconds: 2)),
          );
        }
+       // *** Send image with the feature ID as the type ***
        _webSocketService.sendImageForProcessing(imageFile, featureId);
+       // ***************************************************
 
      } on CameraException catch (e) {
        debugPrint('Error taking picture: ${e.code} - ${e.description}');
        if (mounted) {
+         ScaffoldMessenger.of(context).removeCurrentSnackBar();
          ScaffoldMessenger.of(context).showSnackBar(
            SnackBar(content: Text("Capture Error: ${e.description ?? e.code}")),
          );
        }
-     } catch (e) {
-       debugPrint('Error during feature action: $e');
+     } catch (e, stackTrace) { // Catch broader errors during send
+       debugPrint('Error during feature action (capture/send): $e');
+        debugPrintStack(stackTrace: stackTrace);
        if (mounted) {
-         ScaffoldMessenger.of(context).showSnackBar(
+          ScaffoldMessenger.of(context).removeCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
            SnackBar(content: Text("Action Error: $e")),
          );
        }
      }
    }
 
+  // --- Speech Handling Methods (Keep as is) ---
   void _handleSpeechStatus(String status) {
     debugPrint('Speech recognition status: $status');
     if (!mounted) return;
-    // Use status constants from direct type
     final bool isCurrentlyListening = status == SpeechToText.listeningStatus;
     if (_isListening != isCurrentlyListening) {
-       // Update state based on status
-       setState(() {
-          _isListening = isCurrentlyListening;
-       });
+       setState(() => _isListening = isCurrentlyListening);
     }
-     // Update _speechEnabled based on status if needed (e.g., handle 'unavailable')
-     // Example: if (status == SpeechToText.unavailable) { setState(() => _speechEnabled = false); }
   }
 
-  // --- Use Direct Type ---
   void _handleSpeechError(SpeechRecognitionError error) {
     debugPrint('Speech recognition error: ${error.errorMsg} (Permanent: ${error.permanent})');
     if (!mounted) return;
-
-    // Ensure listening state is reset on error
-    if (_isListening) {
-      setState(() => _isListening = false);
-    }
+    if (_isListening) setState(() => _isListening = false);
 
     String errorMessage = 'Speech error: ${error.errorMsg}';
     SnackBarAction? action;
-
     if (error.errorMsg.contains('permission') || error.permanent) {
       errorMessage = 'Microphone permission error.';
-      action = SnackBarAction(
-        label: 'Help',
-        onPressed: _showPermissionInstructions,
-      );
+      action = SnackBarAction(label: 'Help', onPressed: _showPermissionInstructions);
     }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(errorMessage),
-        action: action,
-      ),
-    );
-     // Potentially disable speech if error is permanent
-     // if(error.permanent && mounted) { setState(() => _speechEnabled = false); }
+    ScaffoldMessenger.of(context).removeCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorMessage), action: action));
   }
 
-  // --- Use Direct Type ---
   void _startListening() async {
-    // No need to check isListening here, official example doesn't,
-    // and the UI button logic handles it.
-    // Ensure it's initialized and available first
      if (!_speechEnabled) {
         debugPrint('Attempted to listen but speech is not enabled/initialized.');
-        // Maybe show a message? Or try initializing again?
-        _initSpeech(); // Try re-initializing
+        _initSpeech();
         return;
      }
-    // Check permission just before listening
      bool hasPermission = await _speechToText.hasPermission;
-     if (!hasPermission) {
+     if (!hasPermission && mounted) {
        debugPrint('Microphone permission denied before listening attempt.');
-       if (mounted) {
-         _showPermissionInstructions();
-         ScaffoldMessenger.of(context).showSnackBar(
-           const SnackBar(content: Text('Microphone permission needed.')),
-         );
-       }
+       _showPermissionInstructions();
+       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Microphone permission needed.')));
        return;
      }
+     if(!mounted) return; // Check mounted state again after async gap
 
-    // Use parameters matching your working CarouselPage
     await _speechToText.listen(
-        onResult: _handleSpeechResult, // Signature uses direct type
-        listenFor: const Duration(seconds: 7), // Keep your desired duration
-        pauseFor: const Duration(seconds: 4), // Keep your desired duration
-        partialResults: false, // Keep your desired setting
-        cancelOnError: true, // Keep your desired setting
-        listenMode: ListenMode.confirmation // Use type from direct import
-        );
-    // Update state to reflect listening started (official example pattern)
-    if (mounted){
-        setState(() {}); // Update UI based on _speechToText.isListening
-    }
+        onResult: _handleSpeechResult,
+        listenFor: const Duration(seconds: 7),
+        pauseFor: const Duration(seconds: 4),
+        partialResults: false,
+        cancelOnError: true,
+        listenMode: ListenMode.confirmation
+    );
+    if (mounted) setState(() {});
   }
 
-   // --- Use Direct Type ---
   void _stopListening() async {
     await _speechToText.stop();
-     // Update state to reflect listening stopped (official example pattern)
-     if (mounted){
-        setState(() {});
-     }
+     if (mounted) setState(() {});
   }
 
-  // --- Use Direct Type ---
   void _handleSpeechResult(SpeechRecognitionResult result) {
-     // Let setState handle UI update based on result
      if (mounted) {
         setState(() {
-           // Process the result here, similar to previous logic
           if (result.finalResult && result.recognizedWords.isNotEmpty) {
               String command = result.recognizedWords.toLowerCase().trim();
               debugPrint('Final recognized command: "$command"');
-
               int targetPageIndex = -1;
               for (int i = 0; i < _features.length; i++) {
                 for (String keyword in _features[i].voiceCommandKeywords) {
@@ -348,30 +353,17 @@ class _HomeScreenState extends State<HomeScreen> {
                 }
                 if (targetPageIndex != -1) break;
               }
-
               if (targetPageIndex != -1) {
                 _navigateToPage(targetPageIndex);
-                // Stop listening after successful command like official example implies?
-                // Or let timeout handle it. If needed:
-                // _stopListening();
               } else {
                 debugPrint('No matching page command found for "$command"');
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Command "$command" not recognized.'),
-                      duration: const Duration(seconds: 3),
-                    ),
-                  );
+                ScaffoldMessenger.of(context).removeCurrentSnackBar();
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Command "$command" not recognized.')));
               }
-          } else if (result.finalResult) {
-              debugPrint('Final result received but empty.');
           }
-           // Optionally update a display string like _lastWords in the example
-           // _lastWords = result.recognizedWords;
         });
      }
   }
-
 
   void _navigateToPage(int pageIndex) {
     if (pageIndex >= 0 && pageIndex < _features.length && mounted) {
@@ -384,6 +376,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
    void _showPermissionInstructions() {
+     // (Keep existing permission instructions dialog)
+     // ...
      if (!mounted) return;
     showDialog(
       context: context,
@@ -408,7 +402,7 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       },
     );
-  }
+   }
 
 
   @override
@@ -416,62 +410,86 @@ class _HomeScreenState extends State<HomeScreen> {
      if (_features.isEmpty) {
       return const Scaffold(body: Center(child: Text("No features configured.")));
     }
+    // Ensure _currentPage is valid before accessing _features
     final validPageIndex = _currentPage.clamp(0, _features.length - 1);
     final currentFeature = _features[validPageIndex];
 
-    // Determine icon/tooltip based on listening state like official example
-    final bool isListening = _speechToText.isListening;
-    final IconData micIcon = isListening ? Icons.mic : Icons.mic_off;
-    final String tooltip = isListening ? 'Stop listening' : 'Start listening';
+    final bool isCurrentlyListening = _speechToText.isListening;
 
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         fit: StackFit.expand,
         children: [
+          // Camera View in the background
           CameraViewWidget(
             cameraController: _cameraController,
             initializeControllerFuture: _initializeControllerFuture,
           ),
+
+          // PageView for different feature UIs (currently placeholders)
           PageView.builder(
             controller: _pageController,
             itemCount: _features.length,
             onPageChanged: (index) {
               if (mounted) {
-                setState(() => _currentPage = index);
+                setState(() {
+                  _currentPage = index;
+                  _lastDetectionResult = ""; // Clear old results on page change
+                });
+                debugPrint("Switched to page: ${_features[index].title}");
               }
             },
             itemBuilder: (context, index) {
+              // Here you could potentially pass the _lastDetectionResult
+              // to the specific feature page if it needs to display it.
+              // For now, PageContent is just a placeholder.
               return _features[index].pageBuilder(context);
             },
           ),
+
+          // Title banner at the top
           FeatureTitleBanner(
             title: currentFeature.title,
             backgroundColor: currentFeature.color,
           ),
-          // Use the ActionButton, but pass the correct state/callbacks
+
+          // Action button at the bottom
           ActionButton(
-            onTap: currentFeature.action, // Keep the single tap action
+            // Single tap triggers image capture and sending for the current feature
+            onTap: currentFeature.action,
+            // Long press triggers voice recognition
             onLongPress: () {
-              // Use start/stop listening like official example's button
               if (!_speechEnabled) {
-                 ScaffoldMessenger.of(context).showSnackBar(
-                     const SnackBar(content: Text('Speech not available/enabled.')),
-                  );
+                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Speech not available/enabled.')));
                  return;
               }
               if (_speechToText.isNotListening) {
-                _startListening(); // Use the method similar to example
+                _startListening();
               } else {
-                _stopListening(); // Use the method similar to example
+                _stopListening();
               }
             },
-            // Reflect actual listening state
-            isListening: isListening,
+            isListening: isCurrentlyListening, // Reflects voice listening state
             color: currentFeature.color,
-            // Optionally change icon based on listening state if ActionButton supports it
-            // Or keep existing icon logic in ActionButton
           ),
+
+          // Optional: Display last result text somewhere on screen?
+          // Positioned(
+          //   bottom: 200,
+          //   left: 20,
+          //   right: 20,
+          //   child: Container(
+          //     padding: EdgeInsets.all(8),
+          //     color: Colors.black.withOpacity(0.5),
+          //     child: Text(
+          //       _lastDetectionResult,
+          //       style: TextStyle(color: Colors.white),
+          //       textAlign: TextAlign.center,
+          //     ),
+          //   ),
+          // ),
+
         ],
       ),
     );

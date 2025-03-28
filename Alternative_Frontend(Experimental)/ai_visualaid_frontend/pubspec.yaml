@@ -39,6 +39,8 @@ dependencies:
   # Networking and WebSocket
   web_socket_channel: ^2.4.0
   http: ^1.1.0
+  socket_io_client: ^3.1.1
+  socket_io_common: 3.1.0
   # Camera and image processing
   camera: ^0.11.1
   path: ^1.8.3
