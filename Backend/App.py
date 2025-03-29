@@ -1,3 +1,6 @@
+# backend python:
+# app.py
+
 import os
 
 #Setting this environment variable can help avoid crashes on some systems, especially macOS
@@ -33,6 +36,7 @@ CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*", max_http_buffer_size=10 * 1024 * 1024, async_mode='threading')
 
 # --- Database Setup (Keep as is, ensure connection works independently) ---
+# ... (DB setup remains the same) ...
 app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:@127.0.0.1:3306/visualaiddb'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ECHO'] = True # Log SQL statements (can be verbose)
@@ -161,14 +165,15 @@ def detect_objects(image_np):
         # Extract relevant info: name and confidence, filter by confidence
         detections = results.pandas().xyxy[0]
         filtered_detections = detections[detections['confidence'] > 0.4] # Adjust confidence threshold if needed
-        # Format output string
-        object_list = [f"{row['name']} ({row['confidence']:.2f})" for index, row in filtered_detections.iterrows()]
+
+        # *** MODIFIED: Format output string WITHOUT confidence ***
+        object_list = [row['name'] for index, row in filtered_detections.iterrows()]
 
         if not object_list:
             logger.debug("Object detection complete: No objects detected above threshold.")
             return "No objects detected"
         else:
-            result_str = ", ".join(object_list)
+            result_str = ", ".join(object_list) # Join names with comma and space
             logger.debug(f"Object detection complete: {result_str}")
             return result_str
     except Exception as e:
@@ -192,9 +197,10 @@ def detect_scene(image_np):
             # Get top prediction
             top_prob, top_catid = torch.max(probabilities, 0)
             predicted_label = places_labels[top_catid.item()]
-            confidence = top_prob.item()
+            # confidence = top_prob.item() # We don't need confidence anymore
 
-        result_str = f"{predicted_label} ({confidence:.2f})"
+        # *** MODIFIED: Return only the label ***
+        result_str = f"{predicted_label}"
         logger.debug(f"Scene detection complete: {result_str}")
         return result_str
     except Exception as e:
@@ -216,13 +222,13 @@ def detect_text(image_np):
         else:
             result_str = " ".join(detected_text_list) # Join with spaces
             logger.debug(f"Text detection complete: Found text '{result_str[:100]}...'")
-            return result_str
+            return result_str # No confidence score here anyway
     except Exception as e:
         logger.error(f"Error during text detection: {e}", exc_info=True)
         return "Error during text detection"
 
 # --- WebSocket Handlers ---
-
+# ... (WebSocket handlers handle_connect, handle_disconnect, handle_message remain the same) ...
 @socketio.on('connect')
 def handle_connect():
     logger.info(f'Client connected: {request.sid}')
@@ -261,7 +267,7 @@ def handle_message(data):
             # Remove data URL prefix if present (e.g., "data:image/jpeg;base64,")
             if ',' in image_data:
                 header, encoded = image_data.split(',', 1)
-                logger.debug(f"Removed data URL header: {header}")
+                # logger.debug(f"Removed data URL header: {header}") # Can be verbose
             else:
                 encoded = image_data
 
@@ -311,12 +317,10 @@ def handle_message(data):
             logger.error(f"Failed to emit error response to {client_sid}: {emit_e}")
 
 
-# --- Keep specific handlers for test.html if needed, but Flutter uses 'message' ---
+# --- Test page handlers (modified to match new output format) ---
 @socketio.on('detect-objects') # Used by test.html
 def handle_object_detection_test(data):
     logger.debug("Received 'detect-objects' (for test page)")
-    # This duplicates logic from handle_message, refactor if possible
-    # For now, just call the main function after decoding
     try:
         img_data = data.get('image')
         if not img_data:
@@ -325,10 +329,12 @@ def handle_object_detection_test(data):
         if ',' in img_data: header, encoded = img_data.split(',', 1)
         else: encoded = img_data
         img_bytes = base64.b64decode(encoded)
-        img = Image.open(io.BytesIO(img_bytes)).convert('RGB') # Ensure RGB
-        results = yolo_model(img)
-        detections = results.pandas().xyxy[0][['name', 'confidence']].to_dict(orient='records')
-        emit('object-detection-result', {'success': True, 'detections': detections})
+        image_np = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR) # Decode to CV2 format
+        if image_np is None: raise ValueError("Failed to decode image")
+        # Call the updated function
+        result_str = detect_objects(image_np)
+        # Send back the string result, mimicking the main 'response' event
+        emit('object-detection-result', {'success': True, 'detections': result_str})
     except Exception as e:
         logger.error(f"Error in 'detect-objects' handler: {e}", exc_info=True)
         emit('object-detection-result', {'success': False, 'error': str(e)})
@@ -344,23 +350,17 @@ def handle_scene_detection_test(data):
         if ',' in img_data: header, encoded = img_data.split(',', 1)
         else: encoded = img_data
         img_bytes = base64.b64decode(encoded)
-        img_pil = Image.open(io.BytesIO(img_bytes)).convert('RGB') # Ensure RGB
-        img_tensor = scene_transform(img_pil).unsqueeze(0)
-        with torch.no_grad():
-            outputs = places_model(img_tensor)
-        probabilities = torch.softmax(outputs, dim=1)[0]
-        top_probs, top_indices = torch.topk(probabilities, 5) # Get top 5
-        predictions = [{
-            'scene': places_labels[idx.item()],
-            'confidence': float(prob) # Use .item() or float()
-        } for idx, prob in zip(top_indices, top_probs)]
-        emit('scene-detection-result', {'success': True, 'predictions': predictions})
+        image_np = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR) # Decode to CV2 format
+        if image_np is None: raise ValueError("Failed to decode image")
+        # Call the updated function
+        result_str = detect_scene(image_np)
+        # Send back the string result
+        emit('scene-detection-result', {'success': True, 'predictions': result_str})
     except Exception as e:
         logger.error(f"Error in 'detect-scene' handler: {e}", exc_info=True)
         emit('scene-detection-result', {'success': False, 'error': str(e)})
 
-
-@socketio.on('ocr') # Used by test.html
+@socketio.on('ocr') # Used by test.html - no change needed here as format was already string
 def handle_ocr_test(data):
     logger.debug("Received 'ocr' (for test page)")
     try:
@@ -376,13 +376,14 @@ def handle_ocr_test(data):
         if image is None:
             emit('ocr-result', {'success': False, 'error': 'Failed to decode image'})
             return
-        results = ocr_reader.readtext(image)
-        detected_text = ' '.join([text[1] for text in results]) if results else 'No text detected'
+        # Call the existing function (already returns string)
+        detected_text = detect_text(image)
         emit('ocr-result', {'success': True, 'detected_text': detected_text})
     except Exception as e:
         logger.error(f"Error in 'ocr' handler: {e}", exc_info=True)
         emit('ocr-result', {'success': False, 'error': str(e)})
 
+# --- Default Error Handler ---
 @socketio.on_error_default # Catch errors from any namespace
 def default_error_handler(e):
     logger.error(f'Unhandled WebSocket Error: {e}', exc_info=True)
@@ -394,6 +395,7 @@ def default_error_handler(e):
 
 
 # --- HTTP Routes (Keep as is for testing/other features) ---
+# ... (HTTP routes / , /update_customization, /get_user_info, /add_test_user remain the same) ...
 @app.route('/')
 def home():
     # Point to your test HTML file if it exists
@@ -502,7 +504,6 @@ def add_test_user():
         db.session.rollback()
         logger.error(f"Error adding test user: {e}", exc_info=True)
         return jsonify({'success': False, 'message': f'Error adding test user: {str(e)}'}), 500
-
 
 # --- Main Execution ---
 if __name__ == '__main__':

@@ -1,22 +1,22 @@
+// lib/presentation/screens/home_screen.dart
+import 'dart:async'; // Import Timer
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
-
-// --- Imports Based on Official Example & Deduced Pattern ---
 import 'package:speech_to_text/speech_to_text.dart';
-// Explicitly import the result and error types
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_recognition_error.dart';
-// --- End Imports ---
-
-import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:web_socket_channel/web_socket_channel.dart'; // Keep for exception type
 import 'package:flutter/foundation.dart';
 
 // Core & Services
 import '../../core/models/feature_config.dart';
 import '../../core/services/websocket_service.dart';
 
-// Features
-import '../../features/feature_registry.dart';
+// Features (Need specific page types and the registry for feature IDs)
+import '../../features/feature_registry.dart'; // To access feature IDs
+import '../../features/object_detection/presentation/pages/object_detection_page.dart';
+import '../../features/scene_detection/presentation/pages/scene_detection_page.dart';
+import '../../features/text_detection/presentation/pages/text_detection_page.dart';
 
 // Widgets
 import '../widgets/camera_view_widget.dart';
@@ -38,7 +38,6 @@ class _HomeScreenState extends State<HomeScreen> {
   final PageController _pageController = PageController();
   int _currentPage = 0;
 
-  // --- Use Direct Types ---
   final SpeechToText _speechToText = SpeechToText();
   bool _isListening = false;
   bool _speechEnabled = false;
@@ -46,31 +45,45 @@ class _HomeScreenState extends State<HomeScreen> {
   final WebSocketService _webSocketService = WebSocketService();
   late List<FeatureConfig> _features;
 
-  // To potentially display results more persistently if needed later
-  String _lastDetectionResult = "";
+  // *** MODIFIED: Separate result variables ***
+  String _lastObjectResult = "";
+  String _lastSceneTextResult = ""; // For Scene and Text results
+  Timer? _objectResultClearTimer; // Timer to clear object result
+
+  // *** Timer for periodic OBJECT detection ***
+  Timer? _detectionTimer;
+  final Duration _detectionInterval = const Duration(seconds: 1);
+  final Duration _objectResultPersistence = const Duration(seconds: 2);
+
+  // Flag to prevent concurrent detections (for both timer and manual)
+  bool _isProcessingImage = false;
+  // Store the type of the last request sent
+  String? _lastRequestedFeatureId;
+
 
   @override
   void initState() {
     super.initState();
-    _features = availableFeatures.map((config) {
+     _features = availableFeatures.map((config) {
       return FeatureConfig(
         id: config.id,
         title: config.title,
         color: config.color,
         voiceCommandKeywords: config.voiceCommandKeywords,
         pageBuilder: config.pageBuilder,
-        // Action is correctly set to trigger image capture and sending
-        action: () => _handleFeatureAction(config.id),
+        action: null, // Action is handled conditionally in build()
       );
     }).toList();
 
+
     _initializeCameraController();
     _initSpeech();
-    _initializeWebSocket(); // Initialize WebSocket connection and listener
+    _initializeWebSocket();
   }
 
   void _initSpeech() async {
-    _speechEnabled = await _speechToText.initialize(
+    // ... (keep existing _initSpeech - no changes)
+     _speechEnabled = await _speechToText.initialize(
         onStatus: _handleSpeechStatus,
         onError: _handleSpeechError,
         debugLogging: kDebugMode);
@@ -92,16 +105,16 @@ class _HomeScreenState extends State<HomeScreen> {
      if (widget.camera != null) {
       _cameraController = CameraController(
         widget.camera!,
-        // Consider using a lower preset initially for faster processing/transfer
-        // ResolutionPreset.high or ResolutionPreset.medium might be sufficient
         ResolutionPreset.high,
         enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.jpeg, // JPEG is usually smaller
+        imageFormatGroup: ImageFormatGroup.jpeg,
       );
       _initializeControllerFuture = _cameraController!.initialize().then((_) {
         if (!mounted) return;
         debugPrint("Camera initialized successfully.");
         setState(() {});
+        // Start timer ONLY if connected AND on object detection page initially
+        _startObjectDetectionTimerIfNeeded();
       }).catchError((error) {
         debugPrint("Camera initialization error: $error");
         if (mounted) {
@@ -112,296 +125,393 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     } else {
       debugPrint("No camera provided to HomeScreen");
-      if (mounted) {
-         ScaffoldMessenger.of(context).showSnackBar(
-           const SnackBar(content: Text("No camera available")),
-         );
-      }
-      // Optionally, disable features requiring camera
+       if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("No camera available")),
+          );
+       }
     }
   }
 
   void _initializeWebSocket() {
      debugPrint("[HomeScreen] Initializing WebSocket listener...");
      _webSocketService.responseStream.listen(
-      (data) { // data is expected to be Map<String, dynamic>
+      (data) {
         debugPrint('[HomeScreen] WebSocket Received: $data');
 
-        // *** UPDATED/REFINED LISTENER LOGIC ***
-        if (mounted) {
-          // Check if the expected 'result' key exists and is a String
-          if (data.containsKey('result') && data['result'] is String) {
-            final resultText = data['result'] as String;
-             setState(() {
-               _lastDetectionResult = resultText; // Store result if needed elsewhere
-             });
-             ScaffoldMessenger.of(context).removeCurrentSnackBar(); // Remove previous messages
-             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text("Result: $resultText"),
-                duration: const Duration(seconds: 4), // Show result longer
-              ),
-            );
-          } else {
-             // Handle cases where 'result' key is missing or not a string
-             debugPrint('[HomeScreen] Received unexpected data format from server: $data');
+        if (mounted && data.containsKey('result') && data['result'] is String) {
+           final resultText = data['result'] as String;
+           final String? receivedForFeatureId = _lastRequestedFeatureId; // Capture the ID when response arrives
+
+           // Clear the request ID now that we have a response
+           _lastRequestedFeatureId = null;
+
+           setState(() {
+               if (receivedForFeatureId == objectDetectionFeature.id) {
+                   _lastObjectResult = resultText;
+                   // Cancel previous clear timer (if any) and start a new one
+                   _objectResultClearTimer?.cancel();
+                   _objectResultClearTimer = Timer(_objectResultPersistence, () {
+                       if (mounted) {
+                           setState(() {
+                               _lastObjectResult = ""; // Clear after persistence duration
+                           });
+                       }
+                   });
+               } else if (receivedForFeatureId == sceneDetectionFeature.id || receivedForFeatureId == textDetectionFeature.id) {
+                   // Scene/Text result persists until next detection for that type
+                   _lastSceneTextResult = resultText;
+               } else {
+                   debugPrint("[HomeScreen] Received result for unknown or unset feature ID: $receivedForFeatureId");
+                   // Optionally display this unexpected result somewhere generic if needed
+                   // _lastSceneTextResult = "Unexpected: $resultText";
+               }
+           });
+        } else if (mounted && data.containsKey('event') && data['event'] == 'connect') {
+             // WebSocket just connected
+             _startObjectDetectionTimerIfNeeded(); // Try starting timer if on object page
              ScaffoldMessenger.of(context).removeCurrentSnackBar();
              ScaffoldMessenger.of(context).showSnackBar(
-               const SnackBar(content: Text("Received unexpected data format from server.")),
+                const SnackBar(content: Text("Connected"), duration: Duration(seconds: 2)),
              );
-          }
+        } else if (mounted) {
+           // Handle other message types or errors
+           debugPrint('[HomeScreen] Received non-result or unexpected data format: $data');
+           // Optionally clear results or show generic error
+           // setState(() {
+           //   _lastObjectResult = "";
+           //   _lastSceneTextResult = "Invalid Data Received";
+           // });
         }
-        // ****************************************
 
       },
       onError: (error) {
         debugPrint('[HomeScreen] WebSocket Error: $error');
-        String errorMessage = "Connection Error";
-        if (error is WebSocketChannelException) {
-          errorMessage = "Connection Error: ${error.message ?? 'WebSocket issue'}";
-        } else if (error is ArgumentError) { // Catch config errors from connect()
-           errorMessage = error.message;
-        }
-         else {
-          errorMessage = "Connection Error: ${error.toString()}";
-        }
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).removeCurrentSnackBar();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(errorMessage)),
-          );
-        }
+        _stopObjectDetectionTimer(); // Stop timer on error
+        _objectResultClearTimer?.cancel(); // Cancel clear timer
+         if (mounted) {
+            setState(() {
+                // Clear results or show error message in the display area
+                _lastObjectResult = "";
+                _lastSceneTextResult = "Connection Error";
+            });
+            ScaffoldMessenger.of(context).removeCurrentSnackBar();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text("Connection Error: ${error.toString()}")),
+            );
+         }
       },
       onDone: () {
         debugPrint('[HomeScreen] WebSocket connection closed by server.');
+        _stopObjectDetectionTimer(); // Stop timer on disconnect
+        _objectResultClearTimer?.cancel(); // Cancel clear timer
         if (mounted) {
+           setState(() {
+             _lastObjectResult = "";
+             _lastSceneTextResult = "Disconnected";
+           });
            ScaffoldMessenger.of(context).removeCurrentSnackBar();
            ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Disconnected from server. Trying to reconnect...')),
+            const SnackBar(content: Text('Disconnected. Trying to reconnect...')),
           );
-           // Optional: Trigger a reconnect attempt visually or let the service handle it
-           // _webSocketService.connect(); // Be careful not to create rapid reconnect loops
         }
       },
-      cancelOnError: false // Keep listening even after errors
+      cancelOnError: false
     );
-    // Initiate the connection
     _webSocketService.connect();
   }
+
+  // *** MODIFIED: Start timer only if on Object Detection page ***
+  void _startObjectDetectionTimerIfNeeded() {
+    // Check if current page is Object Detection
+    bool isObjectDetectionPage = _features.isNotEmpty &&
+                                 _currentPage.clamp(0, _features.length - 1) < _features.length &&
+                                 _features[_currentPage.clamp(0, _features.length - 1)].id == objectDetectionFeature.id;
+
+    if (isObjectDetectionPage &&
+        _detectionTimer == null &&
+        (_cameraController?.value.isInitialized ?? false) &&
+        _webSocketService.isConnected)
+    {
+        debugPrint("[HomeScreen] Starting OBJECT detection timer...");
+        _detectionTimer = Timer.periodic(_detectionInterval, (_) {
+            _performPeriodicDetection(); // This now only runs for object detection
+        });
+    } else {
+        debugPrint("[HomeScreen] Conditions not met to start OBJECT timer (isObjPage: $isObjectDetectionPage, timer: ${_detectionTimer != null}, camera: ${_cameraController?.value.isInitialized}, socket: ${_webSocketService.isConnected})");
+    }
+  }
+
+  // *** RENAMED: Stop the OBJECT detection timer ***
+  void _stopObjectDetectionTimer() {
+    if (_detectionTimer?.isActive ?? false) {
+        debugPrint("[HomeScreen] Stopping OBJECT detection timer...");
+        _detectionTimer!.cancel();
+        _detectionTimer = null;
+         _isProcessingImage = false; // Reset flag
+    }
+  }
+
+   // *** NEW: Function for manual detection (Scene/Text) ***
+   void _performManualDetection(String featureId) async {
+     debugPrint('Manual detection triggered for feature: $featureId');
+
+     // 1. Check Camera and Processing Flag
+     if (_cameraController == null || !_cameraController!.value.isInitialized) {
+       debugPrint('Manual detection: Camera not ready.');
+        if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Camera not ready")));
+       return;
+     }
+     if (_cameraController!.value.isTakingPicture || _isProcessingImage) {
+       debugPrint('Manual detection: Camera busy or already processing, skipping.');
+        if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Processing... Please wait."), duration: Duration(milliseconds: 500)));
+       return;
+     }
+
+     // 2. Check WebSocket Connection
+     if (!_webSocketService.isConnected) {
+       debugPrint('Manual detection: WebSocket not connected.');
+        if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Not connected. Retrying...")));
+       _webSocketService.connect(); // Attempt reconnect
+       return;
+     }
+
+     // 3. Capture and Send Image
+     try {
+       _isProcessingImage = true; // Set flag
+        // Optionally show brief "Capturing..." message for manual clicks
+        if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Capturing..."), duration: Duration(seconds: 1)));
+
+       // Store the type of request we are making NOW
+       _lastRequestedFeatureId = featureId;
+
+       final XFile imageFile = await _cameraController!.takePicture();
+       debugPrint('Manual detection: Picture taken: ${imageFile.path}');
+
+       // Optionally show "Processing..."
+        if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Processing..."), duration: Duration(seconds: 2)));
+
+       _webSocketService.sendImageForProcessing(imageFile, featureId);
+
+     } on CameraException catch (e) {
+       debugPrint('Manual detection: Error taking picture: ${e.code} - ${e.description}');
+       _lastRequestedFeatureId = null; // Clear request ID on error
+       if (mounted) {
+          setState(() { _lastSceneTextResult = "Capture Error"; }); // Show error in display
+         ScaffoldMessenger.of(context).removeCurrentSnackBar();
+         ScaffoldMessenger.of(context).showSnackBar(
+           SnackBar(content: Text("Capture Error: ${e.description ?? e.code}")),
+         );
+       }
+     } catch (e, stackTrace) {
+       debugPrint('Manual detection: Error during action (capture/send): $e');
+       debugPrintStack(stackTrace: stackTrace);
+       _lastRequestedFeatureId = null; // Clear request ID on error
+       if (mounted) {
+         setState(() { _lastSceneTextResult = "Action Error"; }); // Show error in display
+         ScaffoldMessenger.of(context).removeCurrentSnackBar();
+         ScaffoldMessenger.of(context).showSnackBar(
+           SnackBar(content: Text("Action Error: $e")),
+         );
+       }
+     } finally {
+        // Reset flag ONLY IF the request wasn't for object detection
+        // (because object detection might have immediately followed)
+        // However, since manual is only for scene/text, we can always reset here.
+         _isProcessingImage = false;
+     }
+   }
+
 
   @override
   void dispose() {
     debugPrint("[HomeScreen] Disposing...");
+    _stopObjectDetectionTimer(); // Stop the timer
+    _objectResultClearTimer?.cancel(); // Cancel the clear timer
     _pageController.dispose();
     _cameraController?.dispose();
     if (_speechToText.isListening) {
        _speechToText.stop();
     }
     _speechToText.cancel();
-    _webSocketService.close(); // Close WebSocket connection and stream
+    _webSocketService.close();
     debugPrint("[HomeScreen] Dispose complete.");
     super.dispose();
   }
 
-   // This function sends the image and the correct feature type to the backend
-   void _handleFeatureAction(String featureId) async {
-     debugPrint('Action triggered for feature: $featureId');
+   // *** Called ONLY by the timer for Object Detection ***
+   void _performPeriodicDetection() async {
+     // Feature ID is implicitly objectDetectionFeature.id here
+     final currentFeatureId = objectDetectionFeature.id;
+     debugPrint('Timer Tick: Requesting detection for feature: $currentFeatureId');
 
-     // 1. Check Camera
+     // Checks are similar to manual, but context is timer
      if (_cameraController == null || !_cameraController!.value.isInitialized) {
-       debugPrint('Camera not ready for action.');
-       if (mounted) {
-         ScaffoldMessenger.of(context).showSnackBar(
-           const SnackBar(content: Text("Camera not ready")),
-         );
-       }
+       debugPrint('Timer Tick: Camera not ready.');
+       _stopObjectDetectionTimer(); // Stop timer if camera issue
        return;
      }
-     if (_cameraController!.value.isTakingPicture) {
-       debugPrint('Camera busy, skipping action.');
-       // Optionally show a message that camera is busy
-       // ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Camera busy...")));
+     if (_cameraController!.value.isTakingPicture || _isProcessingImage) {
+       debugPrint('Timer Tick: Camera busy or already processing, skipping.');
        return;
      }
-
-
-     // 2. Check WebSocket Connection
      if (!_webSocketService.isConnected) {
-       debugPrint('WebSocket not connected for action.');
-       if (mounted) {
-         ScaffoldMessenger.of(context).showSnackBar(
-           const SnackBar(content: Text("Not connected to server. Attempting to connect...")),
-         );
-       }
-       _webSocketService.connect(); // Attempt to reconnect
+       debugPrint('Timer Tick: WebSocket not connected.');
+       // Don't stop timer, let service reconnect
        return;
      }
 
-     // 3. Capture and Send Image
      try {
-       if (mounted) {
-         ScaffoldMessenger.of(context).removeCurrentSnackBar();
-         ScaffoldMessenger.of(context).showSnackBar(
-           const SnackBar(content: Text("Capturing..."), duration: Duration(seconds: 1)),
-         );
-       }
+       _isProcessingImage = true;
+
+       // Clear previous object result *before* taking picture for faster visual feedback?
+       // Maybe not, let the persistence timer handle clearing.
+       // if (mounted && _lastObjectResult.isNotEmpty) {
+       //     setState(() { _lastObjectResult = ""; });
+       // }
+
+       // Store the type of request we are making NOW
+       _lastRequestedFeatureId = currentFeatureId;
 
        final XFile imageFile = await _cameraController!.takePicture();
-       debugPrint('Picture taken: ${imageFile.path}');
+       // debugPrint('Timer Tick: Picture taken: ${imageFile.path}'); // Can be verbose
 
-       if (mounted) {
-          ScaffoldMessenger.of(context).removeCurrentSnackBar();
-          ScaffoldMessenger.of(context).showSnackBar(
-           const SnackBar(content: Text("Processing..."), duration: Duration(seconds: 2)),
-         );
-       }
-       // *** Send image with the feature ID as the type ***
-       _webSocketService.sendImageForProcessing(imageFile, featureId);
-       // ***************************************************
+       _webSocketService.sendImageForProcessing(imageFile, currentFeatureId);
 
      } on CameraException catch (e) {
-       debugPrint('Error taking picture: ${e.code} - ${e.description}');
+       debugPrint('Timer Tick: Error taking picture: ${e.code} - ${e.description}');
+       _lastRequestedFeatureId = null; // Clear request ID on error
        if (mounted) {
-         ScaffoldMessenger.of(context).removeCurrentSnackBar();
-         ScaffoldMessenger.of(context).showSnackBar(
-           SnackBar(content: Text("Capture Error: ${e.description ?? e.code}")),
-         );
+          setState(() { _lastObjectResult = "Capture Error"; }); // Show error
+           _objectResultClearTimer?.cancel(); // Stop any pending clear
        }
-     } catch (e, stackTrace) { // Catch broader errors during send
-       debugPrint('Error during feature action (capture/send): $e');
-        debugPrintStack(stackTrace: stackTrace);
+     } catch (e, stackTrace) {
+       debugPrint('Timer Tick: Error during periodic detection (capture/send): $e');
+       debugPrintStack(stackTrace: stackTrace);
+       _lastRequestedFeatureId = null; // Clear request ID on error
        if (mounted) {
-          ScaffoldMessenger.of(context).removeCurrentSnackBar();
-          ScaffoldMessenger.of(context).showSnackBar(
-           SnackBar(content: Text("Action Error: $e")),
-         );
+          setState(() { _lastObjectResult = "Processing Error"; }); // Show error
+           _objectResultClearTimer?.cancel(); // Stop any pending clear
        }
+     } finally {
+        _isProcessingImage = false; // Reset flag
      }
    }
 
-  // --- Speech Handling Methods (Keep as is) ---
-  void _handleSpeechStatus(String status) {
-    debugPrint('Speech recognition status: $status');
-    if (!mounted) return;
-    final bool isCurrentlyListening = status == SpeechToText.listeningStatus;
-    if (_isListening != isCurrentlyListening) {
-       setState(() => _isListening = isCurrentlyListening);
-    }
-  }
+  // --- Speech Handling Methods (Keep as is - no changes) ---
+   void _handleSpeechStatus(String status) { /* ... */
+     debugPrint('Speech recognition status: $status');
+     if (!mounted) return;
+     final bool isCurrentlyListening = status == SpeechToText.listeningStatus;
+     if (_isListening != isCurrentlyListening) {
+        setState(() => _isListening = isCurrentlyListening);
+     }
+   }
+   void _handleSpeechError(SpeechRecognitionError error) { /* ... */
+     debugPrint('Speech recognition error: ${error.errorMsg} (Permanent: ${error.permanent})');
+     if (!mounted) return;
+     if (_isListening) setState(() => _isListening = false);
 
-  void _handleSpeechError(SpeechRecognitionError error) {
-    debugPrint('Speech recognition error: ${error.errorMsg} (Permanent: ${error.permanent})');
-    if (!mounted) return;
-    if (_isListening) setState(() => _isListening = false);
-
-    String errorMessage = 'Speech error: ${error.errorMsg}';
-    SnackBarAction? action;
-    if (error.errorMsg.contains('permission') || error.permanent) {
-      errorMessage = 'Microphone permission error.';
-      action = SnackBarAction(label: 'Help', onPressed: _showPermissionInstructions);
-    }
-    ScaffoldMessenger.of(context).removeCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorMessage), action: action));
-  }
-
-  void _startListening() async {
+     String errorMessage = 'Speech error: ${error.errorMsg}';
+     SnackBarAction? action;
+     if (error.errorMsg.contains('permission') || error.permanent) {
+       errorMessage = 'Microphone permission error.';
+       action = SnackBarAction(label: 'Help', onPressed: _showPermissionInstructions);
+     }
+     ScaffoldMessenger.of(context).removeCurrentSnackBar();
+     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorMessage), action: action));
+   }
+   void _startListening() async { /* ... */
      if (!_speechEnabled) {
-        debugPrint('Attempted to listen but speech is not enabled/initialized.');
-        _initSpeech();
-        return;
+         debugPrint('Attempted to listen but speech is not enabled/initialized.');
+         _initSpeech();
+         return;
      }
      bool hasPermission = await _speechToText.hasPermission;
      if (!hasPermission && mounted) {
-       debugPrint('Microphone permission denied before listening attempt.');
-       _showPermissionInstructions();
-       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Microphone permission needed.')));
-       return;
+        debugPrint('Microphone permission denied before listening attempt.');
+        _showPermissionInstructions();
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Microphone permission needed.')));
+        return;
      }
      if(!mounted) return; // Check mounted state again after async gap
 
-    await _speechToText.listen(
-        onResult: _handleSpeechResult,
-        listenFor: const Duration(seconds: 7),
-        pauseFor: const Duration(seconds: 4),
-        partialResults: false,
-        cancelOnError: true,
-        listenMode: ListenMode.confirmation
-    );
-    if (mounted) setState(() {});
-  }
-
-  void _stopListening() async {
-    await _speechToText.stop();
+     await _speechToText.listen(
+         onResult: _handleSpeechResult,
+         listenFor: const Duration(seconds: 7),
+         pauseFor: const Duration(seconds: 4),
+         partialResults: false,
+         cancelOnError: true,
+         listenMode: ListenMode.confirmation
+     );
      if (mounted) setState(() {});
-  }
-
-  void _handleSpeechResult(SpeechRecognitionResult result) {
+   }
+   void _stopListening() async { /* ... */
+     await _speechToText.stop();
+     if (mounted) setState(() {});
+   }
+   void _handleSpeechResult(SpeechRecognitionResult result) { /* ... */
      if (mounted) {
-        setState(() {
-          if (result.finalResult && result.recognizedWords.isNotEmpty) {
-              String command = result.recognizedWords.toLowerCase().trim();
-              debugPrint('Final recognized command: "$command"');
-              int targetPageIndex = -1;
-              for (int i = 0; i < _features.length; i++) {
-                for (String keyword in _features[i].voiceCommandKeywords) {
-                  if (command.contains(keyword)) {
-                    targetPageIndex = i;
-                    debugPrint('Matched command "$command" to feature "${_features[i].title}" (index $i) via keyword "$keyword"');
-                    break;
-                  }
-                }
-                if (targetPageIndex != -1) break;
-              }
-              if (targetPageIndex != -1) {
-                _navigateToPage(targetPageIndex);
-              } else {
-                debugPrint('No matching page command found for "$command"');
-                ScaffoldMessenger.of(context).removeCurrentSnackBar();
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Command "$command" not recognized.')));
-              }
-          }
-        });
+         setState(() {
+           if (result.finalResult && result.recognizedWords.isNotEmpty) {
+               String command = result.recognizedWords.toLowerCase().trim();
+               debugPrint('Final recognized command: "$command"');
+               int targetPageIndex = -1;
+               for (int i = 0; i < _features.length; i++) {
+                 for (String keyword in _features[i].voiceCommandKeywords) {
+                   if (command.contains(keyword)) {
+                     targetPageIndex = i;
+                     debugPrint('Matched command "$command" to feature "${_features[i].title}" (index $i) via keyword "$keyword"');
+                     break;
+                   }
+                 }
+                 if (targetPageIndex != -1) break;
+               }
+               if (targetPageIndex != -1) {
+                 _navigateToPage(targetPageIndex);
+               } else {
+                 debugPrint('No matching page command found for "$command"');
+                 ScaffoldMessenger.of(context).removeCurrentSnackBar();
+                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Command "$command" not recognized.')));
+               }
+           }
+         });
      }
-  }
-
-  void _navigateToPage(int pageIndex) {
-    if (pageIndex >= 0 && pageIndex < _features.length && mounted) {
-      _pageController.animateToPage(
-        pageIndex,
-        duration: const Duration(milliseconds: 400),
-        curve: Curves.easeInOut,
-      );
-    }
-  }
-
-   void _showPermissionInstructions() {
-     // (Keep existing permission instructions dialog)
-     // ...
-     if (!mounted) return;
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Microphone Permission'),
-          content: const Text(
-            'To use voice navigation:\n\n'
-            '1. Go to your device Settings\n'
-            '2. Find App Permissions or Application Manager\n'
-            '3. Select this app\n'
-            '4. Enable Microphone permissions',
-          ),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('OK'),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-            ),
-          ],
-        );
-      },
-    );
+   }
+   void _navigateToPage(int pageIndex) { /* ... */
+     if (pageIndex >= 0 && pageIndex < _features.length && mounted) {
+       _pageController.animateToPage(
+         pageIndex,
+         duration: const Duration(milliseconds: 400),
+         curve: Curves.easeInOut,
+       );
+     }
+   }
+   void _showPermissionInstructions() { /* ... */
+    if (!mounted) return;
+     showDialog(
+       context: context,
+       builder: (BuildContext context) {
+         return AlertDialog(
+           title: const Text('Microphone Permission'),
+           content: const Text(
+             'To use voice navigation:\n\n'
+             '1. Go to your device Settings\n'
+             '2. Find App Permissions or Application Manager\n'
+             '3. Select this app\n'
+             '4. Enable Microphone permissions',
+           ),
+           actions: <Widget>[
+             TextButton(
+               child: const Text('OK'),
+               onPressed: () {
+                 Navigator.of(context).pop();
+               },
+             ),
+           ],
+         );
+       },
+     );
    }
 
 
@@ -410,57 +520,93 @@ class _HomeScreenState extends State<HomeScreen> {
      if (_features.isEmpty) {
       return const Scaffold(body: Center(child: Text("No features configured.")));
     }
-    // Ensure _currentPage is valid before accessing _features
     final validPageIndex = _currentPage.clamp(0, _features.length - 1);
     final currentFeature = _features[validPageIndex];
+    final bool isObjectDetectionPage = currentFeature.id == objectDetectionFeature.id;
 
     final bool isCurrentlyListening = _speechToText.isListening;
+
+    // Determine which result to display
+    final String resultToShow = isObjectDetectionPage ? _lastObjectResult : _lastSceneTextResult;
 
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Camera View in the background
+          // Camera View
           CameraViewWidget(
             cameraController: _cameraController,
             initializeControllerFuture: _initializeControllerFuture,
           ),
 
-          // PageView for different feature UIs (currently placeholders)
+          // PageView
           PageView.builder(
             controller: _pageController,
             itemCount: _features.length,
             onPageChanged: (index) {
               if (mounted) {
+                 final previousFeatureId = _features[_currentPage.clamp(0, _features.length - 1)].id;
+                 final newFeatureId = _features[index.clamp(0, _features.length - 1)].id;
+
                 setState(() {
                   _currentPage = index;
-                  _lastDetectionResult = ""; // Clear old results on page change
+                   _isProcessingImage = false; // Reset processing flag on swipe
+
+                   // *** Clear only object result on page change ***
+                   _lastObjectResult = "";
+                   // _lastSceneTextResult = ""; // Don't clear scene/text result on swipe
+
                 });
+
+                // Cancel any pending object clear timer
+                _objectResultClearTimer?.cancel();
+
+                // Stop timer if we are *leaving* object detection
+                 if (previousFeatureId == objectDetectionFeature.id && newFeatureId != objectDetectionFeature.id) {
+                    _stopObjectDetectionTimer();
+                 }
+                 // Start timer if we are *entering* object detection
+                 if (newFeatureId == objectDetectionFeature.id) {
+                    _startObjectDetectionTimerIfNeeded();
+                 }
+
                 debugPrint("Switched to page: ${_features[index].title}");
               }
             },
             itemBuilder: (context, index) {
-              // Here you could potentially pass the _lastDetectionResult
-              // to the specific feature page if it needs to display it.
-              // For now, PageContent is just a placeholder.
-              return _features[index].pageBuilder(context);
+               // Pass the *correct* result based on the page type
+               final feature = _features[index];
+               final String displayData = (feature.id == objectDetectionFeature.id)
+                                          ? _lastObjectResult
+                                          : _lastSceneTextResult;
+
+               if (feature.id == objectDetectionFeature.id) {
+                  return ObjectDetectionPage(detectionResult: displayData);
+               } else if (feature.id == sceneDetectionFeature.id) {
+                  return SceneDetectionPage(detectionResult: displayData);
+               } else if (feature.id == textDetectionFeature.id) {
+                  return TextDetectionPage(detectionResult: displayData);
+               } else {
+                  return Center(child: Text('Unknown Page Type: ${feature.id}', style: TextStyle(color: Colors.white)));
+               }
             },
           ),
 
-          // Title banner at the top
+          // Title banner
           FeatureTitleBanner(
             title: currentFeature.title,
             backgroundColor: currentFeature.color,
           ),
 
-          // Action button at the bottom
+          // Action button
           ActionButton(
-            // Single tap triggers image capture and sending for the current feature
-            onTap: currentFeature.action,
-            // Long press triggers voice recognition
-            onLongPress: () {
-              if (!_speechEnabled) {
+             // *** MODIFIED: onTap is conditional ***
+            onTap: isObjectDetectionPage
+                   ? null // No action on tap for object detection
+                   : () => _performManualDetection(currentFeature.id), // Trigger manual for scene/text
+            onLongPress: () { // Keep long press for voice commands
+               if (!_speechEnabled) {
                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Speech not available/enabled.')));
                  return;
               }
@@ -470,26 +616,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 _stopListening();
               }
             },
-            isListening: isCurrentlyListening, // Reflects voice listening state
+            isListening: isCurrentlyListening,
             color: currentFeature.color,
           ),
-
-          // Optional: Display last result text somewhere on screen?
-          // Positioned(
-          //   bottom: 200,
-          //   left: 20,
-          //   right: 20,
-          //   child: Container(
-          //     padding: EdgeInsets.all(8),
-          //     color: Colors.black.withOpacity(0.5),
-          //     child: Text(
-          //       _lastDetectionResult,
-          //       style: TextStyle(color: Colors.white),
-          //       textAlign: TextAlign.center,
-          //     ),
-          //   ),
-          // ),
-
         ],
       ),
     );

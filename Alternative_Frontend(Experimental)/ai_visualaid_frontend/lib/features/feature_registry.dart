@@ -47,13 +47,13 @@ final List<FeatureConfig> availableFeatures = [
 // --- Widget Builders (kept private to this file) ---
 
 Widget _buildObjectDetectionPage(BuildContext context) {
-  return const ObjectDetectionPage();
+  return const ObjectDetectionPage(detectionResult: '',);
 }
 
 Widget _buildSceneDetectionPage(BuildContext context) {
-  return const SceneDetectionPage();
+  return const SceneDetectionPage(detectionResult: '',);
 }
 
 Widget _buildTextDetectionPage(BuildContext context) {
-  return const TextDetectionPage();
+  return const TextDetectionPage(detectionResult: '',);
 }
