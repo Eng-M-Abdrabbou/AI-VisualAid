@@ -23,6 +23,10 @@ import '../widgets/camera_view_widget.dart';
 import '../widgets/feature_title_banner.dart';
 import '../widgets/action_button.dart';
 
+// *** NEW: Import Settings Screen ***
+import 'settings_screen.dart';
+
+
 class HomeScreen extends StatefulWidget {
   final CameraDescription? camera;
 
@@ -82,7 +86,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _initSpeech() async {
-    // ... (keep existing _initSpeech - no changes)
      _speechEnabled = await _speechToText.initialize(
         onStatus: _handleSpeechStatus,
         onError: _handleSpeechError,
@@ -163,8 +166,6 @@ class _HomeScreenState extends State<HomeScreen> {
                    _lastSceneTextResult = resultText;
                } else {
                    debugPrint("[HomeScreen] Received result for unknown or unset feature ID: $receivedForFeatureId");
-                   // Optionally display this unexpected result somewhere generic if needed
-                   // _lastSceneTextResult = "Unexpected: $resultText";
                }
            });
         } else if (mounted && data.containsKey('event') && data['event'] == 'connect') {
@@ -175,13 +176,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SnackBar(content: Text("Connected"), duration: Duration(seconds: 2)),
              );
         } else if (mounted) {
-           // Handle other message types or errors
            debugPrint('[HomeScreen] Received non-result or unexpected data format: $data');
-           // Optionally clear results or show generic error
-           // setState(() {
-           //   _lastObjectResult = "";
-           //   _lastSceneTextResult = "Invalid Data Received";
-           // });
         }
 
       },
@@ -315,10 +310,7 @@ class _HomeScreenState extends State<HomeScreen> {
          );
        }
      } finally {
-        // Reset flag ONLY IF the request wasn't for object detection
-        // (because object detection might have immediately followed)
-        // However, since manual is only for scene/text, we can always reset here.
-         _isProcessingImage = false;
+        _isProcessingImage = false;
      }
    }
 
@@ -364,12 +356,6 @@ class _HomeScreenState extends State<HomeScreen> {
      try {
        _isProcessingImage = true;
 
-       // Clear previous object result *before* taking picture for faster visual feedback?
-       // Maybe not, let the persistence timer handle clearing.
-       // if (mounted && _lastObjectResult.isNotEmpty) {
-       //     setState(() { _lastObjectResult = ""; });
-       // }
-
        // Store the type of request we are making NOW
        _lastRequestedFeatureId = currentFeatureId;
 
@@ -398,8 +384,8 @@ class _HomeScreenState extends State<HomeScreen> {
      }
    }
 
-  // --- Speech Handling Methods (Keep as is - no changes) ---
-   void _handleSpeechStatus(String status) { /* ... */
+  // --- Speech Handling Methods ---
+   void _handleSpeechStatus(String status) {
      debugPrint('Speech recognition status: $status');
      if (!mounted) return;
      final bool isCurrentlyListening = status == SpeechToText.listeningStatus;
@@ -407,7 +393,7 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() => _isListening = isCurrentlyListening);
      }
    }
-   void _handleSpeechError(SpeechRecognitionError error) { /* ... */
+   void _handleSpeechError(SpeechRecognitionError error) {
      debugPrint('Speech recognition error: ${error.errorMsg} (Permanent: ${error.permanent})');
      if (!mounted) return;
      if (_isListening) setState(() => _isListening = false);
@@ -421,7 +407,7 @@ class _HomeScreenState extends State<HomeScreen> {
      ScaffoldMessenger.of(context).removeCurrentSnackBar();
      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorMessage), action: action));
    }
-   void _startListening() async { /* ... */
+   void _startListening() async {
      if (!_speechEnabled) {
          debugPrint('Attempted to listen but speech is not enabled/initialized.');
          _initSpeech();
@@ -446,16 +432,27 @@ class _HomeScreenState extends State<HomeScreen> {
      );
      if (mounted) setState(() {});
    }
-   void _stopListening() async { /* ... */
+   void _stopListening() async {
      await _speechToText.stop();
      if (mounted) setState(() {});
    }
-   void _handleSpeechResult(SpeechRecognitionResult result) { /* ... */
+
+   // *** MODIFIED: Handle speech result to include "settings" command ***
+   void _handleSpeechResult(SpeechRecognitionResult result) {
      if (mounted) {
          setState(() {
            if (result.finalResult && result.recognizedWords.isNotEmpty) {
                String command = result.recognizedWords.toLowerCase().trim();
                debugPrint('Final recognized command: "$command"');
+
+               // *** NEW: Check for "settings" command first ***
+               if (command == 'settings') {
+                 debugPrint('Matched command "settings"');
+                 _navigateToSettingsPage(); // Navigate to settings
+                 return; // Exit early
+               }
+
+               // Existing feature matching logic
                int targetPageIndex = -1;
                for (int i = 0; i < _features.length; i++) {
                  for (String keyword in _features[i].voiceCommandKeywords) {
@@ -467,6 +464,7 @@ class _HomeScreenState extends State<HomeScreen> {
                  }
                  if (targetPageIndex != -1) break;
                }
+
                if (targetPageIndex != -1) {
                  _navigateToPage(targetPageIndex);
                } else {
@@ -478,7 +476,8 @@ class _HomeScreenState extends State<HomeScreen> {
          });
      }
    }
-   void _navigateToPage(int pageIndex) { /* ... */
+
+   void _navigateToPage(int pageIndex) {
      if (pageIndex >= 0 && pageIndex < _features.length && mounted) {
        _pageController.animateToPage(
          pageIndex,
@@ -487,7 +486,23 @@ class _HomeScreenState extends State<HomeScreen> {
        );
      }
    }
-   void _showPermissionInstructions() { /* ... */
+
+   // *** NEW: Navigation function for Settings ***
+   void _navigateToSettingsPage() {
+     if (mounted) {
+       debugPrint("Navigating to Settings page...");
+       // Stop listening if active before navigating
+       if (_speechToText.isListening) {
+         _stopListening();
+       }
+       Navigator.push(
+         context,
+         MaterialPageRoute(builder: (context) => const SettingsScreen()),
+       );
+     }
+   }
+
+   void _showPermissionInstructions() {
     if (!mounted) return;
      showDialog(
        context: context,
@@ -555,7 +570,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
                    // *** Clear only object result on page change ***
                    _lastObjectResult = "";
-                   // _lastSceneTextResult = ""; // Don't clear scene/text result on swipe
 
                 });
 
@@ -579,6 +593,7 @@ class _HomeScreenState extends State<HomeScreen> {
                final feature = _features[index];
                final String displayData = (feature.id == objectDetectionFeature.id)
                                           ? _lastObjectResult
+                                          // *** MODIFIED: Pass scene/text result consistently ***
                                           : _lastSceneTextResult;
 
                if (feature.id == objectDetectionFeature.id) {
@@ -593,15 +608,41 @@ class _HomeScreenState extends State<HomeScreen> {
             },
           ),
 
-          // Title banner
+          // Title banner (Positioned lower via its internal padding now)
           FeatureTitleBanner(
             title: currentFeature.title,
             backgroundColor: currentFeature.color,
           ),
 
-          // Action button
+          // *** NEW: Settings Icon Button ***
+          Align(
+            alignment: Alignment.topRight,
+            child: SafeArea( // Ensures icon is not under status bar/notch
+              child: Padding(
+                // Adjust padding to position icon relative to safe area top-right
+                padding: const EdgeInsets.only(top: 10.0, right: 15.0),
+                child: IconButton(
+                  icon: const Icon(
+                    Icons.settings,
+                    color: Colors.white,
+                    size: 32.0, // Slightly larger icon
+                    shadows: [ // Add shadow for better visibility
+                       Shadow(
+                         blurRadius: 6.0,
+                         color: Colors.black54,
+                         offset: Offset(1.0, 1.0),
+                       ),
+                    ],
+                  ),
+                  onPressed: _navigateToSettingsPage, // Navigate on tap
+                  tooltip: 'Settings', // For accessibility
+                ),
+              ),
+            ),
+          ),
+
+          // Action button (remains at the bottom)
           ActionButton(
-             // *** MODIFIED: onTap is conditional ***
             onTap: isObjectDetectionPage
                    ? null // No action on tap for object detection
                    : () => _performManualDetection(currentFeature.id), // Trigger manual for scene/text
