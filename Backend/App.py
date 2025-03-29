@@ -13,7 +13,6 @@ from flask_sqlalchemy import SQLAlchemy
 import cv2
 import numpy as np
 import torch
-# import os # Already imported
 import io
 import base64
 import logging
