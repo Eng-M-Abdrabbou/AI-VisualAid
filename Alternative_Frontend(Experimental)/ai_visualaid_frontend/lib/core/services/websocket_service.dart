@@ -3,15 +3,13 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:camera/camera.dart'; // For XFile
-
-// Import the new package with corrected prefix style (lowercase)
-import 'package:socket_io_client/socket_io_client.dart' as io; // Changed IO to io
+import 'package:socket_io_client/socket_io_client.dart' as io;
 
 class WebSocketService {
   // *** MAKE SURE THIS IP IS STILL CORRECT ***
-  final String _serverUrl = 'http://xyz:5000';
+  final String _serverUrl = 'http://xyz:5000'; // Replace xyz with your actual backend IP
 
-  io.Socket? _socket; // Use io.Socket type
+  io.Socket? _socket;
   final StreamController<Map<String, dynamic>> _responseController =
       StreamController<Map<String, dynamic>>.broadcast();
   Timer? _connectionRetryTimer;
@@ -34,16 +32,17 @@ class WebSocketService {
     debugPrint('[WebSocketService] Attempting Socket.IO connection to: $_serverUrl');
 
     try {
-      // Create Socket.IO client instance using lowercase 'io' prefix
-      _socket = io.io(_serverUrl, io.OptionBuilder() // Changed IO to io
+      _socket = io.io(_serverUrl, io.OptionBuilder()
           .setTransports(['websocket'])
           .disableAutoConnect()
           .enableReconnection()
-          .setTimeout(10000)
+          .setTimeout(10000) // Connection timeout
+          .setReconnectionDelay(1000) // Initial reconnect delay
+          .setReconnectionDelayMax(5000) // Max reconnect delay
+          .setRandomizationFactor(0.5) // Randomize reconnect delay
           .build());
 
-      // --- Setup Event Handlers BEFORE calling connect() ---
-
+      // --- Event Handlers ---
       _socket!.onConnect((_) {
         debugPrint('[WebSocketService] Socket.IO connected: ID ${_socket?.id}');
         _isConnected = true;
@@ -60,7 +59,6 @@ class WebSocketService {
         _scheduleReconnect(isInitialFailure: true);
       });
 
-       // *** FIXED: Use string event name 'connect_timeout' ***
       _socket!.on('connect_timeout', (data) {
          debugPrint('[WebSocketService] Socket.IO Connection Timeout: $data');
          _isConnected = false;
@@ -86,14 +84,15 @@ class WebSocketService {
          if (reason != 'io client disconnect' && wasConnected) {
            _responseController.addError('Disconnected: ${reason ?? "Unknown reason"}');
          }
+         // Only schedule reconnect if it wasn't a manual client disconnect
          if (reason != 'io client disconnect') {
            _scheduleReconnect();
+         } else {
+             debugPrint('[WebSocketService] Manual disconnect requested, not scheduling reconnect.');
          }
       });
 
-      // --- Handle Custom Events ---
       _socket!.on('response', (data) {
-        // (Keep the existing logic for handling 'response' event)
         debugPrint('[WebSocketService] Received "response" event: $data');
         try {
           if (data is Map<String, dynamic>) {
@@ -107,29 +106,35 @@ class WebSocketService {
              }
           } else {
               debugPrint('[WebSocketService] Received null data on "response" event.');
-              _responseController.add({'result': null});
+              _responseController.add({'result': null}); // Send null result forward
           }
         } catch (e, stackTrace) {
           debugPrint('[WebSocketService] Error processing "response" event data: $e');
+          debugPrintStack(stackTrace: stackTrace);
           _responseController.addError(FormatException('Data Processing Error: $e'), stackTrace);
         }
       });
 
-      // --- Handle other standard Socket.IO events using string names ---
-      // _socket!.on('connecting', (_) => debugPrint('[WebSocketService] Connecting...')); // Often not needed as state is handled by connect/error
-       // *** FIXED: Use string event name 'reconnecting' ***
+      // Other standard handlers...
       _socket!.on('reconnecting', (attempt) => debugPrint('[WebSocketService] Reconnecting attempt $attempt...'));
       _socket!.on('reconnect', (attempt) => debugPrint('[WebSocketService] Reconnected on attempt $attempt'));
-      _socket!.on('reconnect_attempt', (attempt) => debugPrint('[WebSocketService] Reconnect attempt $attempt'));
+      _socket!.on('reconnect_attempt', (attempt) {
+          debugPrint('[WebSocketService] Reconnect attempt $attempt');
+          // Optionally notify UI about reconnect attempts
+          // _responseController.add({'event': 'reconnecting', 'attempt': attempt});
+      });
       _socket!.on('reconnect_error', (data) => debugPrint('[WebSocketService] Reconnect error: $data'));
-      _socket!.on('reconnect_failed', (data) => debugPrint('[WebSocketService] Reconnect failed: $data'));
-      _socket!.on('ping', (_) => debugPrint('[WebSocketService] Ping'));
-      _socket!.on('pong', (_) => debugPrint('[WebSocketService] Pong'));
-
+      _socket!.on('reconnect_failed', (data) {
+         debugPrint('[WebSocketService] Reconnect failed: $data');
+          _responseController.addError('Reconnect Failed');
+          // Maybe stop trying after failed reconnects or notify user differently
+      });
+      // _socket!.on('ping', (_) => debugPrint('[WebSocketService] Ping')); // Can be verbose
+      // _socket!.on('pong', (_) => debugPrint('[WebSocketService] Pong')); // Can be verbose
 
       // Manually initiate the connection
       _socket!.connect();
-      _isConnecting = true;
+      // No need to set _isConnecting = true here, it's set at the start
 
     } catch (e, stackTrace) {
       debugPrint('[WebSocketService] Error initializing Socket.IO client: $e');
@@ -141,24 +146,34 @@ class WebSocketService {
     }
   }
 
-  // --- Sending Data (No changes needed here from previous version) ---
-  void sendImageForProcessing(XFile imageFile, String pageType) async {
+  // --- Sending Data ---
+  // *** MODIFIED: Added optional languageCode parameter ***
+  void sendImageForProcessing(
+      XFile imageFile,
+      String pageType,
+      {String? languageCode} // Optional language code
+      ) async {
     if (!isConnected || _socket == null) {
       debugPrint('[WebSocketService] Cannot send image for $pageType: Not connected.');
       _responseController.addError('Cannot send: Not connected');
       return;
     }
 
-    debugPrint('[WebSocketService] Preparing image for $pageType...');
+    debugPrint('[WebSocketService] Preparing image for $pageType ${languageCode != null ? "(Lang: $languageCode)" : ""}...');
     try {
       final bytes = await imageFile.readAsBytes();
       final base64Image = base64Encode(bytes);
+
+      // *** MODIFIED: Add language to payload if provided and type is text_detection ***
       final payload = {
         'type': pageType,
         'image': base64Image,
+        if (pageType == 'text_detection' && languageCode != null)
+          'language': languageCode, // Include language code conditionally
       };
+
       final payloadSizeKB = (json.encode(payload).length / 1024).toStringAsFixed(1);
-      debugPrint('[WebSocketService] Sending "message" event ($payloadSizeKB kB)...');
+      debugPrint('[WebSocketService] Sending "message" event ($payloadSizeKB kB) with payload keys: ${payload.keys}');
 
       _socket!.emitWithAck('message', payload, ack: (ackData) {
          debugPrint('[WebSocketService] Server acknowledged "message" event. Ack data: $ackData');
@@ -171,34 +186,43 @@ class WebSocketService {
     }
   }
 
-  // --- Connection Management (No changes needed here from previous version) ---
+  // --- Connection Management ---
   void _scheduleReconnect({bool isInitialFailure = false}) {
     if (_connectionRetryTimer?.isActive ?? false) {
       debugPrint('[WebSocketService] Reconnect already scheduled.');
       return;
     }
-    _closeExistingSocket();
+    _closeExistingSocket(); // Ensure previous socket is closed before scheduling
     final currentDelay = isInitialFailure ? 3 : _retrySeconds;
     debugPrint('[WebSocketService] Scheduling Socket.IO reconnect in $currentDelay seconds...');
     _connectionRetryTimer = Timer(Duration(seconds: currentDelay), () {
+      // Exponential backoff for subsequent retries
       if (!isInitialFailure) {
+         // Increase delay, clamped between 5 and 60 seconds
         _retrySeconds = (_retrySeconds * 1.5).clamp(5, 60).toInt();
         debugPrint('[WebSocketService] Next retry delay set to $_retrySeconds seconds.');
       }
       debugPrint('[WebSocketService] Attempting Socket.IO reconnection...');
-      connect();
+      connect(); // Try connecting again
     });
   }
 
   void _cancelRetryTimer() {
     _connectionRetryTimer?.cancel();
     _connectionRetryTimer = null;
+     // Reset retry seconds when manually cancelled or successfully connected
+     // (reset on connect is handled in onConnect)
+     // If cancelled due to manual close, reset doesn't matter much.
+     // If cancelled due to other reasons (e.g., manual connect attempt), resetting might be desired.
+     // Let's reset it here for simplicity.
+     // _retrySeconds = 5; // Optional: Reset backoff on any cancellation
   }
 
   void _closeExistingSocket() {
     if (_socket != null) {
       debugPrint('[WebSocketService] Disposing existing Socket.IO socket (ID: ${_socket?.id})...');
       try {
+        // Important: use dispose() for socket_io_client
         _socket!.dispose();
       } catch (e) {
          debugPrint('[WebSocketService] Exception disposing socket: $e');
@@ -206,19 +230,21 @@ class WebSocketService {
          _socket = null;
       }
     }
+     // Reset connection state flags whenever closing
      _isConnected = false;
      _isConnecting = false;
   }
 
   void close() {
     debugPrint('[WebSocketService] Closing service requested...');
-    _cancelRetryTimer();
+    _cancelRetryTimer(); // Stop any scheduled reconnects
      if (_socket?.connected ?? false) {
         debugPrint('[WebSocketService] Manually disconnecting socket...');
+        // Use disconnect() for a clean client-side disconnect signal
         _socket!.disconnect();
      }
-    _closeExistingSocket();
-    _responseController.close();
+    _closeExistingSocket(); // Dispose the socket resources
+    _responseController.close(); // Close the stream controller
     debugPrint('[WebSocketService] Service closed.');
   }
 }
