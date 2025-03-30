@@ -140,12 +140,12 @@ try:
     # *** UPDATED: List of language codes ***
     SUPPORTED_OCR_LANGS = [
         'en',  # Latin
-        'ar', 'fa', 'ur', 'ug', # Arabic script
-        'hi', 'mr', 'ne', # Devanagari
-        'ru', # Cyrillic
-        'ch_sim', 'ch_tra', 'ja', 'ko', # East Asian
-        'te', 'kn', # South Indic
-        'bn', # East Indic
+        # 'ar', 'fa', 'ur', 'ug', # Arabic script
+        # 'hi', 'mr', 'ne', # Devanagari
+        # 'ru', # Cyrillic
+        # 'ch_sim', 'ch_tra', 'ja', 'ko', # East Asian
+        # 'te', 'kn', # South Indic
+        # 'bn', # East Indic
 
     ]
     DEFAULT_OCR_LANG = 'en'
