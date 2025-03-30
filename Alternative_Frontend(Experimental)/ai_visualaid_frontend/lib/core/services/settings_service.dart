@@ -1,74 +1,56 @@
 // lib/core/services/settings_service.dart
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter/foundation.dart'; // For debugPrint
+import 'package:flutter/foundation.dart'; 
 
-// Define supported languages (match codes with backend easyocr codes)
-// Map<LanguageCode, DisplayName>
 const Map<String, String> supportedOcrLanguages = {
-  // Latin Basic + European Extensions
   'en': 'English',
-  // Arabic Script
   'ar': 'Arabic',
   'fa': 'Persian (Farsi)',
   'ur': 'Urdu',
   'ug': 'Uyghur',
-  // Devanagari Script (and related)
   'hi': 'Hindi',
   'mr': 'Marathi',
   'ne': 'Nepali',
-  // Cyrillic Script
   'ru': 'Russian',
-  // Use easyocr specific code
-  // East Asian
-  'ch_sim': 'Chinese (Simplified)', // Use easyocr specific code
-  'ch_tra': 'Chinese (Traditional)', // Use easyocr specific code
+  'ch_sim': 'Chinese (Simplified)',
+  'ch_tra': 'Chinese (Traditional)',
   'ja': 'Japanese',
   'ko': 'Korean',
-  // South Indic Scripts
   'te': 'Telugu',
   'kn': 'Kannada',
-  // East Indic Scripts
   'bn': 'Bengali',
-  // Add other languages supported by easyocr if needed
-  // Check easyocr documentation for the latest list and codes
-};
+}; 
 
-// Default language if none is set
-const String defaultOcrLanguage = 'en'; // English remains default
+const String defaultOcrLanguage = 'en';
 
 class SettingsService {
   static const String _ocrLanguageKey = 'ocr_language';
 
-  // Ensure the default language code is valid
   static String getValidatedDefaultLanguage() {
     return supportedOcrLanguages.containsKey(defaultOcrLanguage)
         ? defaultOcrLanguage
-        : supportedOcrLanguages.keys.first; // Fallback to the first supported lang
+        : supportedOcrLanguages.keys.first;
   }
 
   Future<SharedPreferences> _getPrefs() async {
     return await SharedPreferences.getInstance();
   }
 
-  // --- OCR Language ---
-
   Future<String> getOcrLanguage() async {
     try {
       final prefs = await _getPrefs();
       final savedLang = prefs.getString(_ocrLanguageKey);
-      // Validate saved language against supported list
       if (savedLang != null && supportedOcrLanguages.containsKey(savedLang)) {
         debugPrint('[SettingsService] Loaded OCR Language: $savedLang');
         return savedLang;
       } else {
         final defaultLang = getValidatedDefaultLanguage();
         debugPrint('[SettingsService] No valid language saved/found, returning default: $defaultLang');
-        await prefs.setString(_ocrLanguageKey, defaultLang); // Save the default if invalid was loaded
+        await prefs.setString(_ocrLanguageKey, defaultLang);
         return defaultLang;
       }
     } catch (e) {
       debugPrint('[SettingsService] Error loading OCR language: $e. Returning default.');
-      // Attempt to save default on error as well? Maybe not necessary.
       return getValidatedDefaultLanguage();
     }
   }
@@ -76,7 +58,7 @@ class SettingsService {
   Future<void> setOcrLanguage(String languageCode) async {
     if (!supportedOcrLanguages.containsKey(languageCode)) {
        debugPrint('[SettingsService] Attempted to save unsupported language: $languageCode');
-       return; // Don't save unsupported languages
+       return;
     }
     try {
       final prefs = await _getPrefs();

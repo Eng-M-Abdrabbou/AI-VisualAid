@@ -1,5 +1,5 @@
 // lib/presentation/widgets/camera_view_widget.dart
-import 'dart:math'; // For Point calculation if needed, but likely not here
+import 'dart:math'; 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 
@@ -15,7 +15,6 @@ class CameraViewWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // --- Start of existing error handling and future builder ---
     if (cameraController == null || initializeControllerFuture == null) {
       return Container(
         color: Colors.black,
@@ -36,7 +35,7 @@ class CameraViewWidget extends StatelessWidget {
         final controller = cameraController!;
 
         if (snapshot.hasError || !controller.value.isInitialized) {
-           String errorMessage = "..."; // Simplified
+           String errorMessage = "..."; 
            if (snapshot.hasError && snapshot.error is CameraException) {
               errorMessage = "Camera Error: ${(snapshot.error as CameraException).description}";
            } else if (snapshot.hasError) {
@@ -50,13 +49,13 @@ class CameraViewWidget extends StatelessWidget {
              child: Center(child: Text(errorMessage, style: TextStyle(color: Colors.red), textAlign: TextAlign.center)),
            );
         }
-        // --- End of existing error handling ---
+ 
 
 
         final mediaQuery = MediaQuery.of(context);
         final screenWidth = mediaQuery.size.width;
         final screenHeight = mediaQuery.size.height;
-        final screenAspectRatio = screenWidth / screenHeight; // Should be < 1 for portrait
+        final screenAspectRatio = screenWidth / screenHeight; 
 
         final reportedCameraAspectRatio = controller.value.aspectRatio;
         if (reportedCameraAspectRatio <= 0) {
@@ -68,7 +67,6 @@ class CameraViewWidget extends StatelessWidget {
 
 
         Widget preview = RotatedBox(
-          // Rotate 90 degrees clockwise. If upside down, change to 3.
           quarterTurns: 0,
           child: CameraPreview(controller),
         );
@@ -82,16 +80,15 @@ class CameraViewWidget extends StatelessWidget {
         return Container(
           width: screenWidth,
           height: screenHeight,
-          color: Colors.black, // Background
+          color: Colors.black, 
           child: FittedBox(
-            fit: BoxFit.cover, // Scale the child to cover this container
+            fit: BoxFit.cover, 
             alignment: Alignment.center,
             clipBehavior: Clip.hardEdge,
             child: SizedBox(
-
-              width: 100, // Arbitrary base width
-              height: 100 / rotatedPreviewAspectRatio, // Height matching the rotated ratio
-              child: preview, // Place the rotated preview widget here
+              width: 100, 
+              height: 100 / rotatedPreviewAspectRatio, 
+              child: preview, 
             ),
           ),
         );

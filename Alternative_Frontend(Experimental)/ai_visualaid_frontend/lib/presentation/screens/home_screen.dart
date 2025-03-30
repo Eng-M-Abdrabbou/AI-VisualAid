@@ -5,7 +5,7 @@ import 'package:camera/camera.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_recognition_error.dart';
-import 'package:flutter/foundation.dart'; // for kDebugMode, debugPrint
+import 'package:flutter/foundation.dart'; 
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:vibration/vibration.dart';
@@ -40,37 +40,35 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
-  // Camera
+
   CameraController? _cameraController;
   Future<void>? _initializeControllerFuture;
 
-  // Page View
+
   final PageController _pageController = PageController();
   int _currentPage = 0;
 
-  // Speech
+
   final SpeechToText _speechToText = SpeechToText();
   bool _isListening = false;
   bool _speechEnabled = false;
 
-  // WebSocket & Features
+  
   final WebSocketService _webSocketService = WebSocketService();
   late List<FeatureConfig> _features;
   final SettingsService _settingsService = SettingsService();
   String _selectedOcrLanguage = SettingsService.getValidatedDefaultLanguage();
 
-  // Results & State
+
   String _lastObjectResult = "";
   String _lastSceneTextResult = "";
   Timer? _objectResultClearTimer;
-  // *** HAZARD DETECTION STATE ***
-  String _lastHazardRawResult = ""; // Store raw result for potential debugging
-  // *** NEW: Store only the *specific* hazard name to display ***
+  String _lastHazardRawResult = ""; 
   String _currentDisplayedHazardName = "";
-  bool _isHazardAlertActive = false; // Is the hazard alert currently showing?
-  Timer? _hazardAlertClearTimer; // Timer to clear the hazard alert display
+  bool _isHazardAlertActive = false; 
+  Timer? _hazardAlertClearTimer; 
 
-  // Detection Control
+
   Timer? _detectionTimer;
   final Duration _detectionInterval = const Duration(seconds: 1);
   final Duration _objectResultPersistence = const Duration(seconds: 2);
@@ -78,12 +76,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _isProcessingImage = false;
   String? _lastRequestedFeatureId;
 
-  // Alerting Members
+
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _hasVibrator = false;
   static const String _alertSoundPath = "audio/alert.mp3";
 
-  // *** HAZARD LIST (ensure lowercase if backend sends lowercase) ***
+ 
   static const Set<String> _hazardObjectNames = {
     "car", "bicycle", "motorcycle", "bus", "train", "truck", "boat",
     "traffic light", "stop sign",
@@ -121,38 +119,33 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  // --- Alerting Functions ---
 
-  // *** MODIFIED: Trigger alert *every time* it's called ***
+
+
   void _triggerHazardAlert(String hazardName) {
     debugPrint("[ALERT] Triggering for: $hazardName");
 
-    // 1. Set state: Activate alert and store the specific name
     if (mounted) {
       setState(() {
         _isHazardAlertActive = true;
-        _currentDisplayedHazardName = hazardName; // Store the specific hazard
+        _currentDisplayedHazardName = hazardName; 
       });
     }
 
-    // 2. Play sound (always play)
+
     _playAlertSound();
 
-    // 3. Vibrate (always trigger)
     _triggerVibration();
 
-    // 4. Manage clear timer: Cancel any existing timer and start a new one
-    //    This ensures the *latest* hazard alert persists for the full duration.
     _hazardAlertClearTimer?.cancel();
     _hazardAlertClearTimer = Timer(_hazardAlertPersistence, _clearHazardAlert);
   }
 
-   // Clears the visual alert state
    void _clearHazardAlert() {
       if (mounted && _isHazardAlertActive) {
         setState(() {
           _isHazardAlertActive = false;
-          _currentDisplayedHazardName = ""; // Clear the displayed name
+          _currentDisplayedHazardName = ""; 
         });
         debugPrint("[ALERT] Hazard alert display cleared by timer.");
       }
@@ -161,8 +154,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _playAlertSound() async {
     try {
-       // Consider stopping only if you want abrupt cut-off, otherwise playing over is fine
-       // await _audioPlayer.stop();
        await _audioPlayer.play(AssetSource(_alertSoundPath), volume: 1.0);
        debugPrint("[ALERT] Playing alert sound.");
     } catch (e) {
@@ -243,20 +234,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
      disposeAndCreate();
   }
 
-  // *** MODIFIED: WebSocket Listener Logic for Hazard Detection ***
   void _initializeWebSocket() {
      debugPrint("[HomeScreen] Initializing WebSocket listener...");
      _webSocketService.responseStream.listen(
       (data) {
         if (!mounted) return;
-        // Handle connection events
         if (data.containsKey('event') && data['event'] == 'connect') {
              _showStatusMessage("Connected", durationSeconds: 2);
              _startDetectionTimerIfNeeded();
              return;
         }
 
-        // Handle result data
         if (data.containsKey('result')) {
            final resultText = data['result'] as String? ?? "No result";
            final String? receivedForFeatureId = _lastRequestedFeatureId;
@@ -268,9 +256,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
            debugPrint('[HomeScreen] Received result for "$receivedForFeatureId": "$resultText"');
 
-           // Process based on the requesting feature
            setState(() {
-               _lastRequestedFeatureId = null; // Consume ID FIRST
+               _lastRequestedFeatureId = null; 
 
                if (receivedForFeatureId == objectDetectionFeature.id) {
                    _lastObjectResult = resultText;
@@ -280,9 +267,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                    });
 
                } else if (receivedForFeatureId == hazardDetectionFeature.id) {
-                   _lastHazardRawResult = resultText; // Store raw result
+                   _lastHazardRawResult = resultText; 
 
-                   String specificHazardFound = ""; // Track the specific hazard found in THIS frame
+                   String specificHazardFound = ""; 
                    bool hazardFoundInFrame = false;
 
                    if (resultText.isNotEmpty && resultText != "No objects detected" && !resultText.startsWith("Error")) {
@@ -290,22 +277,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                        for (String obj in detectedObjects) {
                            if (_hazardObjectNames.contains(obj)) {
                                hazardFoundInFrame = true;
-                               specificHazardFound = obj; // Record the first hazard found
-                               break; // Stop checking once one hazard is found
+                               specificHazardFound = obj; 
+                               break; 
                            }
                        }
                    }
 
-                   // --- Alerting and State Update Logic ---
+
                    if (hazardFoundInFrame) {
-                       // *** ALWAYS trigger alert if a hazard is found in the current frame ***
                        _triggerHazardAlert(specificHazardFound);
                    } else {
-                       // NO hazard found in *this specific frame*.
-                       // Do NOT trigger a new alert.
-                       // Do NOT clear the alert immediately if one was active from a *previous* frame.
-                       // Let the existing _hazardAlertClearTimer handle the clearing of the visual alert.
-                       // If the timer fires (_clearHazardAlert), it will set _isHazardAlertActive = false.
                    }
 
                } else if (receivedForFeatureId == sceneDetectionFeature.id || receivedForFeatureId == textDetectionFeature.id) {
@@ -323,7 +304,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         debugPrint('[HomeScreen] WebSocket Error: $error');
         _stopDetectionTimer();
         _objectResultClearTimer?.cancel();
-        _hazardAlertClearTimer?.cancel(); // Cancel hazard timer
+        _hazardAlertClearTimer?.cancel(); 
         setState(() {
           _lastObjectResult = ""; _lastSceneTextResult = "Connection Error";
           _lastHazardRawResult = ""; _isHazardAlertActive = false; _currentDisplayedHazardName = ""; // Clear hazard state fully
@@ -335,7 +316,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         debugPrint('[HomeScreen] WebSocket connection closed.');
         _stopDetectionTimer();
         _objectResultClearTimer?.cancel();
-        _hazardAlertClearTimer?.cancel(); // Cancel hazard timer
+        _hazardAlertClearTimer?.cancel(); 
         if (mounted) {
            setState(() {
              _lastObjectResult = ""; _lastSceneTextResult = "Disconnected";
@@ -359,9 +340,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
       debugPrint("[Lifecycle] App inactive/paused - Cleaning up...");
       _stopDetectionTimer();
-      _audioPlayer.pause(); // Pause audio
-      _hazardAlertClearTimer?.cancel(); // Stop alert clear timer
-      // Safely dispose camera
+      _audioPlayer.pause(); 
+      _hazardAlertClearTimer?.cancel(); 
+
       controller?.dispose().then((_) {
            debugPrint("[Lifecycle] Camera controller disposed.");
            if (mounted) setState(() { _cameraController = null; _initializeControllerFuture = null; });
@@ -369,27 +350,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           debugPrint("[Lifecycle] Error disposing camera controller on pause: $e");
           if (mounted) setState(() { _cameraController = null; _initializeControllerFuture = null; });
       });
-       // Ensure state reflects disposed camera even if dispose fails or controller was already null
+       
        if (mounted && _cameraController != null) {
            setState(() { _cameraController = null; _initializeControllerFuture = null; });
        }
 
     } else if (state == AppLifecycleState.resumed) {
       debugPrint("[Lifecycle] App resumed");
-      // Re-initialize camera only if it's null
+      
       if (_cameraController == null) {
         debugPrint("[Lifecycle] Re-initializing camera controller...");
         _initializeCameraController();
       }
-       // Reconnect WebSocket if needed
+       
        if (!_webSocketService.isConnected) {
            debugPrint("[Lifecycle] Attempting WebSocket reconnect on resume...");
            _webSocketService.connect();
        } else {
-          _startDetectionTimerIfNeeded(); // Ensure timer starts if conditions met
+          _startDetectionTimerIfNeeded(); 
        }
-       // Resume audio if needed (optional)
-       // _audioPlayer.resume();
+  
     }
   }
 
@@ -400,14 +380,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _stopDetectionTimer();
     _objectResultClearTimer?.cancel();
-    _hazardAlertClearTimer?.cancel(); // *** Cancel hazard timer ***
+    _hazardAlertClearTimer?.cancel(); 
     _pageController.dispose();
     _cameraController?.dispose().catchError((e) { debugPrint("[Dispose] Error disposing camera: $e"); });
     _cameraController = null;
     if (_speechToText.isListening) { _speechToText.stop(); }
     _speechToText.cancel();
     _audioPlayer.stop();
-    _audioPlayer.dispose(); // *** Release audio resources ***
+    _audioPlayer.dispose(); 
     _webSocketService.close();
     debugPrint("[HomeScreen] Dispose complete.");
     super.dispose();
@@ -444,19 +424,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
      try {
        _isProcessingImage = true;
-       _lastRequestedFeatureId = currentFeatureId; // Track requesting feature
+       _lastRequestedFeatureId = currentFeatureId; 
 
        final XFile imageFile = await _cameraController!.takePicture();
 
-       // ALWAYS send 'object_detection' type to backend
        _webSocketService.sendImageForProcessing(imageFile, objectDetectionFeature.id);
 
      } catch (e, stackTrace) {
-       _handleCaptureError(e, stackTrace, currentFeatureId); // Pass actual page ID
-       _lastRequestedFeatureId = null; // Clear request ID
-       _isProcessingImage = false; // Ensure reset
+       _handleCaptureError(e, stackTrace, currentFeatureId); 
+       _lastRequestedFeatureId = null; 
+       _isProcessingImage = false; 
      } finally {
-        // Use await with delay before resetting flag
         await Future.delayed(const Duration(milliseconds: 100));
         if (mounted) _isProcessingImage = false;
      }
@@ -499,7 +477,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
          if (featureId == objectDetectionFeature.id) {
              _lastObjectResult = "Error"; _objectResultClearTimer?.cancel();
          } else if (featureId == hazardDetectionFeature.id) {
-             _lastHazardRawResult = ""; _clearHazardAlert(); // Clear alert fully on error
+             _lastHazardRawResult = ""; _clearHazardAlert(); 
              _hazardAlertClearTimer?.cancel();
          } else {
              _lastSceneTextResult = "Error";
@@ -607,7 +585,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15.0)), ), );
    }
 
-  // *** MODIFIED: Build Method for Hazard Page ***
   @override
   Widget build(BuildContext context) {
      if (_features.isEmpty) return const Scaffold(backgroundColor: Colors.black, body: Center(child: Text("No features configured.", style: TextStyle(color: Colors.white))));
@@ -626,7 +603,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           PageView.builder(
             controller: _pageController,
             itemCount: _features.length,
-            // *** MODIFIED: onPageChanged Logic ***
             onPageChanged: (index) {
               if (!mounted) return;
               final newPageIndex = index.clamp(0, _features.length - 1);
@@ -638,30 +614,29 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               final newFeature = _features[newPageIndex];
               debugPrint("Page changed from ${previousFeature.title} to ${newFeature.title}");
 
-              // --- State Updates & Cleanup ---
               setState(() {
                  _currentPage = newPageIndex;
                  _isProcessingImage = false; _lastRequestedFeatureId = null;
 
-                 // Clear state for the PREVIOUS page
+
                  if (previousFeature.id == objectDetectionFeature.id) {
                      _objectResultClearTimer?.cancel(); _lastObjectResult = "";
                  } else if (previousFeature.id == hazardDetectionFeature.id) {
-                     _hazardAlertClearTimer?.cancel(); // Cancel timer
-                     _clearHazardAlert(); // Use function to ensure state reset
-                     _lastHazardRawResult = ""; // Clear raw text
+                     _hazardAlertClearTimer?.cancel();
+                     _clearHazardAlert();
+                     _lastHazardRawResult = "";
                  } else {
-                     // _lastSceneTextResult = ""; // Optional: clear scene/text
+
                  }
               });
 
-              // --- Timer Management ---
+
               final bool wasRealtime = previousFeature.id == objectDetectionFeature.id || previousFeature.id == hazardDetectionFeature.id;
               final bool isNowRealtime = newFeature.id == objectDetectionFeature.id || newFeature.id == hazardDetectionFeature.id;
               if (wasRealtime && !isNowRealtime) _stopDetectionTimer();
               if (isNowRealtime) _startDetectionTimerIfNeeded();
             },
-            // *** MODIFIED: itemBuilder ***
+
             itemBuilder: (context, index) {
                if (index >= _features.length) return const Center(child: Text("Error: Invalid page index", style: TextStyle(color: Colors.red)));
                final feature = _features[index];
@@ -669,9 +644,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                if (feature.id == objectDetectionFeature.id) {
                   return ObjectDetectionPage(detectionResult: _lastObjectResult);
                } else if (feature.id == hazardDetectionFeature.id) {
-                  // *** Pass the SPECIFIC hazard name and alert status ***
                   return HazardDetectionPage(
-                      detectionResult: _currentDisplayedHazardName, // Use specific name
+                      detectionResult: _currentDisplayedHazardName,
                       isHazardAlert: _isHazardAlertActive
                   );
                } else if (feature.id == sceneDetectionFeature.id) {
@@ -683,14 +657,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                }
             },
           ),
-          // 3. Title Banner
+
           FeatureTitleBanner( title: currentFeature.title, backgroundColor: currentFeature.color, ),
-          // 4. Settings Button
           Align( alignment: Alignment.topRight, child: SafeArea( child: Padding(
                 padding: const EdgeInsets.only(top: 10.0, right: 15.0),
                 child: IconButton( icon: const Icon(Icons.settings, color: Colors.white, size: 32.0, shadows: [Shadow(blurRadius: 6.0, color: Colors.black54, offset: Offset(1.0, 1.0))]),
                   onPressed: _navigateToSettingsPage, tooltip: 'Settings', ), ), ), ),
-          // 5. Action Button
           ActionButton(
             onTap: isRealtimePage ? null : () => _performManualDetection(currentFeature.id),
             onLongPress: () { if (!_speechEnabled) { _showStatusMessage('Speech not available', isError: true); _initSpeech(); return; }

@@ -1,33 +1,31 @@
 // lib/features/object_detection/presentation/pages/object_detection_page.dart
 import 'package:flutter/material.dart';
-// Removed PageContent import
+
 
 class ObjectDetectionPage extends StatelessWidget {
-  final String detectionResult; // Added to receive results
+  final String detectionResult; 
 
   const ObjectDetectionPage({
     super.key,
-    required this.detectionResult // Make it required
+    required this.detectionResult 
   });
 
   @override
   Widget build(BuildContext context) {
-    // Display the result directly in the center
     return Container(
-      // Transparent background allows camera view to show through
       color: Colors.transparent,
       alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: 20.0), // Add padding
+      padding: const EdgeInsets.symmetric(horizontal: 20.0),
       child: Text(
-        detectionResult.replaceAll('_', ' '), // Format result here
+        detectionResult.replaceAll('_', ' '),
         style: const TextStyle(
-          fontSize: 24, // Adjust size as needed
+          fontSize: 24, 
           fontWeight: FontWeight.bold,
-          color: Colors.white, // White text for visibility over camera
-          shadows: [ // Add shadow for better readability
+          color: Colors.white, 
+          shadows: [ 
             Shadow(
               blurRadius: 8.0,
-              color: Colors.black87, // Slightly darker shadow
+              color: Colors.black87, 
               offset: Offset(2.0, 2.0),
             ),
           ],

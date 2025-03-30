@@ -1,6 +1,6 @@
 // lib/presentation/screens/settings_screen.dart
 import 'package:flutter/material.dart';
-import '../../core/services/settings_service.dart'; // Import the service
+import '../../core/services/settings_service.dart'; 
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -11,7 +11,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final SettingsService _settingsService = SettingsService();
-  String? _selectedOcrLanguage; // Nullable initially
+  String? _selectedOcrLanguage; 
   bool _isLoading = true;
 
   @override
@@ -23,7 +23,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadSettings() async {
     setState(() => _isLoading = true);
     final loadedLang = await _settingsService.getOcrLanguage();
-    // Ensure the loaded language is actually in our supported list for the dropdown
     if (mounted) {
        setState(() {
           _selectedOcrLanguage = supportedOcrLanguages.containsKey(loadedLang)
@@ -56,26 +55,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Settings'),
-        backgroundColor: Colors.teal, // Example color
+        backgroundColor: Colors.teal, 
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : ListView( // Use ListView for potential future settings
+          : ListView( 
               padding: const EdgeInsets.all(16.0),
               children: <Widget>[
                 _buildOcrLanguageSetting(),
-                const Divider(height: 30), // Separator
-                // Add more settings sections here later
+                const Divider(height: 30), 
                  ListTile(
                   leading: const Icon(Icons.info_outline),
                   title: const Text('About'),
                    subtitle: const Text('Version, Licenses, etc.'),
                    onTap: () {
-                      // Navigate to an About screen or show a dialog
                       showAboutDialog(
                          context: context,
                          applicationName: 'VisionAid Companion',
-                         applicationVersion: '1.0.0', // Replace with dynamic version later
+                         applicationVersion: '1.0.0', 
                          applicationIcon: const Icon(Icons.visibility),
                          children: [
                             const Padding(
@@ -98,12 +95,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       subtitle: Text('Select the primary language for OCR (${supportedOcrLanguages[_selectedOcrLanguage] ?? _selectedOcrLanguage})'),
       trailing: DropdownButton<String>(
         value: _selectedOcrLanguage,
-        // Prevent dropdown if language is somehow null (shouldn't happen with validation)
         onChanged: _selectedOcrLanguage == null ? null : _updateOcrLanguage,
         items: supportedOcrLanguages.entries.map((entry) {
           return DropdownMenuItem<String>(
             value: entry.key,
-            child: Text(entry.value), // Display full name (e.g., "English")
+            child: Text(entry.value),
           );
         }).toList(),
       ),

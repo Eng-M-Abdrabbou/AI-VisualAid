@@ -13,20 +13,15 @@ class FeatureTitleBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Use SafeArea to avoid status bar overlap even when positioned absolutely
     return SafeArea(
-      // Ensure SafeArea only affects the top part if needed,
-      // otherwise it might add padding everywhere. Default is fine here.
-      bottom: false, // Don't apply safe area padding to the bottom
+      bottom: false, 
       child: Align(
         alignment: Alignment.topCenter,
         child: Padding(
-          // *** MODIFIED: Increased top padding to lower the banner ***
-          padding: const EdgeInsets.only(top: 65.0), // Increased from 20.0
+          padding: const EdgeInsets.only(top: 65.0),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
             decoration: BoxDecoration(
-              // Slightly more transparency if desired
               color: backgroundColor.withAlpha((0.75 * 255).toInt()),
               borderRadius: BorderRadius.circular(30),
               boxShadow: const [

@@ -2,12 +2,12 @@
 import 'package:flutter/material.dart';
 
 class FeatureConfig {
-  final String id; // Unique identifier (e.g., 'object_detection')
+  final String id; 
   final String title;
   final Color color;
   final List<String> voiceCommandKeywords;
-  final WidgetBuilder pageBuilder; // Function to build the page widget
-  final VoidCallback? action; // Optional: Action to execute on tap
+  final WidgetBuilder pageBuilder; 
+  final VoidCallback? action; 
 
   const FeatureConfig({
     required this.id,
