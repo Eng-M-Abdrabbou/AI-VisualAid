@@ -21,32 +21,33 @@ It was entirely made for IEEE competition 2025, and accroding to the requirement
     *   Select the primary language for Text Reading (OCR).
 *   **Real-time & Manual Modes:** Object and Hazard detection run continuously when their page is active. Scene, Text, and Barcode detection require user action (tap button or barcode presence).
 
-## Screenshots / Demo
+## Screenshots / Demo ⚒️
 
+### this part is under construction 
 
 *   **Carousel Navigation:** Show swiping between feature pages.
     ```
-    [Insert GIF/Image of Carousel Swiping Here]
+    [ GIF/Image of Carousel Swiping]
     ```
 *   **Object Detection:** Show the camera view with an object identified and maybe the spoken output overlayed (if possible in a GIF).
     ```
-    [Insert GIF/Image of Object Detection Here]
+    [GIF/Image of Object Detection]
     ```
 *   **Hazard Detection:** Show the alert state (e.g., red text overlay, vibration indicator) for a detected hazard.
     ```
-    [Insert GIF/Image of Hazard Detection Alert Here]
+    [GIF/Image of Hazard Detection Alert]
     ```
 *   **Text Reading:** Show the camera pointing at text and the recognized text displayed/spoken.
     ```
-    [Insert GIF/Image of Text Reading Here]
+    [GIF/Image of Text Reading]
     ```
 *   **Barcode Scanning:** Show the viewfinder scanning a barcode and the resulting product info.
     ```
-    [Insert GIF/Image of Barcode Scanning Here]
+    [GIF/Image of Barcode Scanning]
     ```
 *   **Settings Screen:** Show the different options available (TTS sliders, OCR language dropdown).
     ```
-    [Insert Image of Settings Screen Here]
+    [Image of Settings Screen]
     ```
 
 ## Technology Stack
