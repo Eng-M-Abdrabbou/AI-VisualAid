@@ -12,3 +12,9 @@ flask_cors>=0.10.1
 flask-socketio
 python-socketio
 python-engineio
+PyMySQL
+SQLAlchemy
+Eventlet
+
+# To install all the requirements from requirements.txt use the following command:
+# pip install -r requirements.txt
