@@ -11,7 +11,7 @@ import 'package:vibration/vibration.dart';
 
 import '../../core/models/feature_config.dart';
 import '../../core/services/websocket_service.dart';
-import '../../core/services/settings_service.dart';
+import '../../core/services/settings_service.dart'; // Import settings service
 import '../../core/services/tts_service.dart';
 import '../../core/services/barcode_api_service.dart';
 
@@ -42,7 +42,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   CameraController? _cameraController;
   Future<void>? _initializeControllerFuture;
   bool _isMainCameraInitializing = false;
-  Key _cameraViewKey = UniqueKey(); // Key to force rebuild
+  Key _cameraViewKey = UniqueKey();
 
   final PageController _pageController = PageController();
   int _currentPage = 0;
@@ -59,8 +59,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _ttsInitialized = false;
 
   String _selectedOcrLanguage = SettingsService.getValidatedDefaultLanguage();
+  String _selectedObjectCategory = defaultObjectCategory; // New state variable
 
-  String _lastObjectResult = "";
+  String _lastObjectResult = ""; // This will now hold the FILTERED result
   String _lastSceneTextResult = "";
 
 
@@ -94,7 +95,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _initializeFeatures();
-    _initializeServices();
+    _initializeServices(); // Calls _loadAndInitializeSettings
     _checkVibrator();
     debugPrint("[HomeScreen] initState Completed");
   }
@@ -177,7 +178,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _initializeServices() async {
-    await _loadAndInitializeSettings();
+    await _loadAndInitializeSettings(); // Load all settings including category
     final currentFeatureId = _features.isNotEmpty ? _features[_currentPage.clamp(0, _features.length - 1)].id : null;
     if (currentFeatureId != barcodeScannerFeature.id) {
       await _initializeMainCameraController();
@@ -190,10 +191,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _loadAndInitializeSettings() async {
-    _selectedOcrLanguage = await _settingsService.getOcrLanguage();
-    final ttsVolume = await _settingsService.getTtsVolume();
-    final ttsPitch = await _settingsService.getTtsPitch();
-    final ttsRate = await _settingsService.getTtsRate();
+    // Load all settings together
+    final results = await Future.wait([
+      _settingsService.getOcrLanguage(),
+      _settingsService.getTtsVolume(),
+      _settingsService.getTtsPitch(),
+      _settingsService.getTtsRate(),
+      _settingsService.getObjectDetectionCategory(), // Load category
+    ]);
+
+    _selectedOcrLanguage = results[0] as String;
+    final ttsVolume = results[1] as double;
+    final ttsPitch = results[2] as double;
+    final ttsRate = results[3] as double;
+    _selectedObjectCategory = results[4] as String; // Store category
 
     if (!_ttsInitialized) {
        await _ttsService.initTts(
@@ -209,6 +220,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     debugPrint("[HomeScreen] OCR language setting loaded: $_selectedOcrLanguage");
     debugPrint("[HomeScreen] TTS settings loaded V:$ttsVolume P:$ttsPitch R:$ttsRate");
+    debugPrint("[HomeScreen] Object Category loaded: $_selectedObjectCategory");
+
+    if (mounted) setState(() {}); // Update UI after loading all settings
   }
 
   void _initSpeech() async {
@@ -241,11 +255,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
      _cameraController = null;
      _initializeControllerFuture = null;
      _isMainCameraInitializing = false;
-     _cameraViewKey = UniqueKey(); // Update key on dispose
+     _cameraViewKey = UniqueKey();
 
 
      if(mounted) {
-        setState((){}); // Update UI immediately
+        setState((){});
      }
 
      try {
@@ -279,7 +293,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
 
-  // Returns void, indicates progress via _isMainCameraInitializing
   Future<void> _initializeMainCameraController() async {
      final currentFeatureId = _features.isNotEmpty ? _features[_currentPage.clamp(0, _features.length - 1)].id : null;
      if (widget.camera == null || currentFeatureId == barcodeScannerFeature.id || _cameraController != null || _isMainCameraInitializing) {
@@ -288,23 +301,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                    "Barcode Page ($currentFeatureId == ${barcodeScannerFeature.id}), "
                    "Already exists (${_cameraController != null}), "
                    "Already Initializing (${_isMainCameraInitializing})");
-        return;
+
+
+       return;
      }
 
      if (!mounted) return;
 
      debugPrint("[HomeScreen] Initializing main CameraController...");
 
-     // Reset state and update key BEFORE creating controller/future
+
      _isMainCameraInitializing = true;
      _cameraController = null;
      _initializeControllerFuture = null;
-     _cameraViewKey = UniqueKey(); // Update key here
-     if (mounted) setState((){}); // Show loading
+     _cameraViewKey = UniqueKey();
+     if (mounted) setState((){});
 
 
-     await Future.delayed(const Duration(milliseconds: 250)); // Give native side time
-     if(!mounted || currentFeatureId == barcodeScannerFeature.id) { // Re-check after delay
+     await Future.delayed(const Duration(milliseconds: 250));
+     if(!mounted || currentFeatureId == barcodeScannerFeature.id) {
         _isMainCameraInitializing = false;
         if(mounted) setState((){});
         debugPrint("[HomeScreen] Aborting init due to unmount or page change during delay.");
@@ -326,11 +341,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
      Future<void> initFuture;
      try {
-        // Assign controller and future
         _cameraController = newController;
         initFuture = newController.initialize();
         _initializeControllerFuture = initFuture;
-        // DO NOT call setState here, wait for future completion
+        if(mounted) setState((){});
+
      } catch (e) {
          debugPrint("[HomeScreen] Error assigning initialize future: $e");
           if (mounted) {
@@ -343,22 +358,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
          return;
      }
 
+
      try {
-       await initFuture; // Wait for initialization to complete
+       await initFuture;
        if (!mounted) {
            debugPrint("[HomeScreen] Widget unmounted during camera initialization, disposing new controller.");
            try { await newController.dispose(); } catch (_) {}
-           // No need to update state if unmounted
+           _isMainCameraInitializing = false;
            return;
        }
-       if (_cameraController == newController) { // Check if still the same controller
+       if (_cameraController == newController) {
           debugPrint("[HomeScreen] Main Camera initialized successfully.");
            _isMainCameraInitializing = false;
-            _startDetectionTimerIfNeeded(); // Start timer after success
+
+            _startDetectionTimerIfNeeded();
+
        } else {
            debugPrint("[HomeScreen] Camera controller changed during initialization, disposing new controller.");
            try { await newController.dispose(); } catch (_) {}
            _isMainCameraInitializing = false;
+
        }
      } catch (error,s) {
        debugPrint("[HomeScreen] Main Camera initialization error: $error\n$s");
@@ -369,17 +388,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
        final bool shouldReset = _cameraController == newController;
         if(shouldReset) {
              _showStatusMessage("Camera init failed: ${error is CameraException ? error.description : error}", isError: true);
-             _cameraController = null; // Reset on failure
+             _cameraController = null;
              _initializeControllerFuture = null;
         } else {
            debugPrint("[HomeScreen] Controller changed after initialization error. Disposing new controller.");
             try { await newController.dispose(); } catch (_) {}
         }
+
        _isMainCameraInitializing = false;
+
      } finally {
-       // Final state update AFTER await completes or error occurs
        if(mounted){
-           setState(() {}); // This will trigger UI rebuild with final state
+           setState(() {});
        }
      }
   }
@@ -400,15 +420,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
         if (data.containsKey('result')) {
            final resultTextRaw = data['result'] as String? ?? "No result";
+           // Hazard detection needs the raw (potentially unfiltered) list
+           final String rawDetectionsForHazards = resultTextRaw;
+
            final String? receivedForFeatureId = _lastRequestedFeatureId;
-           final String resultText = resultTextRaw.replaceAll('_', ' ');
+
 
            if (receivedForFeatureId == null) {
                debugPrint('[HomeScreen] Received result, but _lastRequestedFeatureId is null. Ignoring.');
                return;
            }
 
-           debugPrint('[HomeScreen] Received result for "$receivedForFeatureId": "$resultText"');
+           debugPrint('[HomeScreen] Received result for "$receivedForFeatureId": "$resultTextRaw"');
 
 
            setState(() {
@@ -416,23 +439,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
                bool speakResult = false;
                String textToSpeak = "";
+               String displayResult = ""; // For non-realtime or filtered OD
 
-               if (receivedForFeatureId == objectDetectionFeature.id) {
-                   _lastObjectResult = resultText;
-
-                   if (resultText.isNotEmpty && resultText != "No objects detected" && !resultText.startsWith("Error")) {
-                      speakResult = true;
-                      textToSpeak = resultText;
-                   }
-
-               } else if (receivedForFeatureId == hazardDetectionFeature.id) {
-                   _lastHazardRawResult = resultText;
-
+               // --- Hazard Detection Logic (Uses RAW results) ---
+               // This logic needs to run regardless of the *current* page
+               // if the request was for object detection.
+               if (receivedForFeatureId == objectDetectionFeature.id || receivedForFeatureId == hazardDetectionFeature.id) {
+                   _lastHazardRawResult = rawDetectionsForHazards; // Store raw
                    String specificHazardFound = "";
                    bool hazardFoundInFrame = false;
 
-                   if (resultText.isNotEmpty && resultText != "No objects detected" && !resultText.startsWith("Error")) {
-                       List<String> detectedObjects = resultTextRaw.toLowerCase().split(',').map((e) => e.trim()).toList();
+                   if (rawDetectionsForHazards.isNotEmpty && rawDetectionsForHazards != "No objects detected" && !rawDetectionsForHazards.startsWith("Error")) {
+                       // Use lowercased raw results for hazard check
+                       List<String> detectedObjects = rawDetectionsForHazards.toLowerCase().split(',').map((e) => e.trim()).toList();
                        for (String obj in detectedObjects) {
                            if (_hazardObjectNames.contains(obj)) {
                                hazardFoundInFrame = true;
@@ -442,32 +461,74 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                        }
                    }
 
-
                    if (hazardFoundInFrame) {
-
                        _triggerHazardAlert(specificHazardFound);
-                   } else {
-
-
                    }
+                   // NO else needed here, alert clears automatically by timer
+               }
+               // --- End Hazard Detection Logic ---
 
+
+               // --- Feature-Specific Display/TTS Logic ---
+               if (receivedForFeatureId == objectDetectionFeature.id) {
+                  // Filter based on settings
+                   if (rawDetectionsForHazards.isNotEmpty && rawDetectionsForHazards != "No objects detected" && !rawDetectionsForHazards.startsWith("Error")) {
+                       List<String> allDetected = rawDetectionsForHazards.split(',').map((e) => e.trim()).toList();
+                       List<String> filteredObjects = [];
+
+                       if (_selectedObjectCategory == 'all') {
+                           filteredObjects = allDetected;
+                       } else {
+                           for (String obj in allDetected) {
+                               String lowerObj = obj.toLowerCase();
+                               if (cocoObjectToCategoryMap[lowerObj] == _selectedObjectCategory) {
+                                   filteredObjects.add(obj); // Add original casing
+                               }
+                           }
+                       }
+
+                       if (filteredObjects.isNotEmpty) {
+                            displayResult = filteredObjects.join(', ');
+                            speakResult = true;
+                            textToSpeak = displayResult;
+                       } else {
+                            displayResult = "No objects found in category: ${objectDetectionCategories[_selectedObjectCategory] ?? _selectedObjectCategory}";
+                            speakResult = false; // Don't speak "nothing found" message
+                       }
+
+                   } else {
+                       // Handle "No objects detected" or "Error" from backend
+                       displayResult = rawDetectionsForHazards; // Show the original message
+                       speakResult = false; // Don't speak error or "no objects"
+                   }
+                   _lastObjectResult = displayResult; // Update state with filtered result
+
+
+               } else if (receivedForFeatureId == hazardDetectionFeature.id) {
+                  // Hazard display is handled by _triggerHazardAlert and _clearHazardAlert
+                  // No direct update to _lastObjectResult needed here
+                  // We already processed hazards above using raw results
+                   ; // No action needed for display state here
 
                } else if (receivedForFeatureId == sceneDetectionFeature.id) {
-                    _lastSceneTextResult = resultText;
-                     if (resultText.isNotEmpty && !resultText.startsWith("Error")) {
+                    displayResult = resultTextRaw.replaceAll('_', ' '); // Use formatted for display/speech
+                    _lastSceneTextResult = displayResult;
+                     if (displayResult.isNotEmpty && !displayResult.startsWith("Error")) {
                         speakResult = true;
-                        textToSpeak = "Scene: $resultText";
+                        textToSpeak = "Scene: $displayResult";
                      }
                } else if (receivedForFeatureId == textDetectionFeature.id) {
-                   _lastSceneTextResult = resultText;
-                    if (resultText.isNotEmpty && resultText != "No text detected" && !resultText.startsWith("Error")) {
+                   displayResult = resultTextRaw; // Keep raw text for display/speech
+                   _lastSceneTextResult = displayResult;
+                    if (displayResult.isNotEmpty && displayResult != "No text detected" && !displayResult.startsWith("Error")) {
                         speakResult = true;
-                        textToSpeak = "Text detected: $resultText";
+                        textToSpeak = "Text detected: $displayResult";
                      }
                } else {
                    debugPrint("[HomeScreen] Received result for UNKNOWN feature ID: $receivedForFeatureId.");
                }
 
+               // Speak result only if applicable and not for hazards (hazards speak separately)
                if (speakResult && _ttsInitialized && receivedForFeatureId != hazardDetectionFeature.id) {
                    _ttsService.speak(textToSpeak);
                }
@@ -540,7 +601,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (currentFeatureId != barcodeScannerFeature.id) {
          debugPrint("[Lifecycle] Resumed on non-barcode page. Ensuring main camera is initialized.");
 
-         _initializeMainCameraController(); // Don't await, just trigger
+         _initializeMainCameraController();
       } else {
           debugPrint("[Lifecycle] App resumed on barcode page, main camera should remain off.");
 
@@ -623,12 +684,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
      try {
        _isProcessingImage = true;
-       _lastRequestedFeatureId = currentFeatureId;
+       _lastRequestedFeatureId = currentFeatureId; // Use the actual page ID here
 
        final XFile imageFile = await _cameraController!.takePicture();
 
 
-       _webSocketService.sendImageForProcessing(imageFile, objectDetectionFeature.id);
+       _webSocketService.sendImageForProcessing(imageFile, objectDetectionFeature.id); // Always send as object_detection type
 
      } catch (e, stackTrace) {
        _handleCaptureError(e, stackTrace, currentFeatureId);
@@ -689,7 +750,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
         if (_cameraController == null && widget.camera != null && !_isMainCameraInitializing && showError) {
             debugPrint("Triggering re-initialization from _cameraControllerCheck (Manual Trigger)");
-            _initializeMainCameraController(); // Trigger init, don't await, rely on its internal setState
+            _initializeMainCameraController();
         }
         return false;
       }
@@ -855,27 +916,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
      final bool isBarcodePage = currentFeature.id == barcodeScannerFeature.id;
 
 
-     // Determine widget to display based on state
-    Widget cameraDisplayWidget;
-    if (isBarcodePage) {
-      cameraDisplayWidget = Container(color: Colors.black); // Barcode page handles its own camera
-    } else if (_isMainCameraInitializing) {
-       cameraDisplayWidget = Container( // Show loading indicator while initializing
-           key: const ValueKey('placeholder_initializing'),
-           color: Colors.black,
-           child: const Center(child: CircularProgressIndicator(color: Colors.white,)));
-    } else if (_cameraController != null && _initializeControllerFuture != null) {
-       cameraDisplayWidget = CameraViewWidget( // Show camera view if ready
-                     key: _cameraViewKey, // Use key to force rebuild
-                     cameraController: _cameraController,
-                     initializeControllerFuture: _initializeControllerFuture,
+     Widget cameraDisplayWidget;
+     if (isBarcodePage) {
+       cameraDisplayWidget = Container(key: const ValueKey('barcode_placeholder'), color: Colors.black);
+     } else if (_cameraController != null && _initializeControllerFuture != null && !_isMainCameraInitializing) {
+        cameraDisplayWidget = CameraViewWidget(
+                      key: _cameraViewKey, // Use the key here
+                      cameraController: _cameraController,
+                      initializeControllerFuture: _initializeControllerFuture,
+                   );
+     } else {
+        cameraDisplayWidget = Container( // Show loading indicator or placeholder
+                      key: ValueKey('placeholder_${_isMainCameraInitializing}_${_cameraController == null}'),
+                      color: Colors.black,
+                      child: _isMainCameraInitializing
+                           ? const Center(child: CircularProgressIndicator(color: Colors.white,))
+                           : const Center(child: Text("Camera initializing...", style: TextStyle(color: Colors.white54))),
                   );
-    } else {
-       cameraDisplayWidget = Container( // Fallback / Error state
-                     key: const ValueKey('placeholder_error'),
-                     color: Colors.black,
-                     child: const Center(child: Text("Camera unavailable", style: TextStyle(color: Colors.red))));
-    }
+     }
 
 
      return Scaffold(
@@ -885,13 +943,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         children: [
 
 
-          cameraDisplayWidget, // Use the determined widget
+          // Use AnimatedSwitcher for smoother visual transition
+          AnimatedSwitcher(
+             duration: const Duration(milliseconds: 300),
+             child: cameraDisplayWidget,
+          ),
 
 
           PageView.builder(
             controller: _pageController,
             itemCount: _features.length,
-            physics: const ClampingScrollPhysics(), // Prevent overscroll bounce
+            physics: const ClampingScrollPhysics(),
 
             onPageChanged: (index) async {
               if (!mounted) return;
@@ -908,25 +970,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               if(_ttsInitialized) _ttsService.stop();
 
 
-              _stopDetectionTimer();
+              _stopDetectionTimer(); // ALWAYS stop timer first
 
               bool isSwitchingFromBarcode = previousFeature.id == barcodeScannerFeature.id;
               bool isSwitchingToBarcode = newFeature.id == barcodeScannerFeature.id;
 
-              // Update page state FIRST
+              // Update page index state FIRST
               if(mounted) {
-                setState(() {
-                  _currentPage = newPageIndex;
-                  _isProcessingImage = false; _lastRequestedFeatureId = null;
-                  // Clear previous page results
-                  if (previousFeature.id == objectDetectionFeature.id) { _lastObjectResult = ""; }
-                  else if (previousFeature.id == hazardDetectionFeature.id) { _hazardAlertClearTimer?.cancel(); _clearHazardAlert(); _lastHazardRawResult = ""; }
-                  else if (previousFeature.id != barcodeScannerFeature.id) { _lastSceneTextResult = ""; }
-                });
+                setState(() { _currentPage = newPageIndex; });
               } else { return; }
 
 
-               // Handle Camera Transitions AFTER updating page state
+               // Handle Camera Transitions
                if (isSwitchingToBarcode) {
                    debugPrint("Switching TO barcode page - disposing main camera...");
                    await _disposeMainCameraController(); // Calls setState internally
@@ -934,23 +989,32 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
                } else if (isSwitchingFromBarcode) {
                    debugPrint("Switching FROM barcode page - initializing main camera...");
-                   await _initializeMainCameraController(); // Calls setState internally
+                   await _initializeMainCameraController(); // Calls setState internally in finally block
                    debugPrint("Main camera initialization attempt completed.");
-
-                   // Schedule final check/update/timer start for next frame
-                   WidgetsBinding.instance.addPostFrameCallback((_) {
-                       if(mounted){
-                           bool isCamReadyNow = _cameraControllerCheck(showError: false);
-                           setState((){}); // Force final UI update
-                           debugPrint("Post-init callback: Camera ready=$isCamReadyNow. Forcing UI Update.");
-                           if (isCamReadyNow) _startDetectionTimerIfNeeded();
-                       }
-                   });
+                   // NO extra setState or postFrameCallback needed here, init function handles it
                }
 
-               // Start timer if switching between non-barcode realtime pages
+
+              if(mounted) {
+                // Clear previous page results AFTER camera ops complete
+                setState(() {
+                  _isProcessingImage = false; _lastRequestedFeatureId = null;
+                  if (previousFeature.id == objectDetectionFeature.id) { _lastObjectResult = ""; }
+                  else if (previousFeature.id == hazardDetectionFeature.id) { _hazardAlertClearTimer?.cancel(); _clearHazardAlert(); _lastHazardRawResult = ""; }
+                  else if (previousFeature.id != barcodeScannerFeature.id) { _lastSceneTextResult = ""; }
+                });
+
+              } else {
+                 return;
+              }
+
+
+
               final bool isNowRealtime = newFeature.id == objectDetectionFeature.id || newFeature.id == hazardDetectionFeature.id;
-              if (isNowRealtime && !isSwitchingFromBarcode) {
+
+
+              if (isNowRealtime) {
+                   // Try starting timer AFTER the page transition logic
                    _startDetectionTimerIfNeeded();
                }
 

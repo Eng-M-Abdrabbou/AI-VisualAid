@@ -1,6 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
 
+
 const Map<String, String> supportedOcrLanguages = {
   'eng': 'English',
   'ara': 'Arabic',
@@ -18,19 +19,136 @@ const Map<String, String> supportedOcrLanguages = {
   'tel': 'Telugu',
   'kan': 'Kannada',
   'ben': 'Bengali',
+
 };
 
-const String defaultOcrLanguage = 'eng'; 
+const String defaultOcrLanguage = 'eng';
+
 
 const double defaultTtsVolume = 0.8;
 const double defaultTtsPitch = 1.0;
 const double defaultTtsRate = 0.5;
+
+
+const String defaultObjectCategory = 'all';
+
+
+const Map<String, String> objectDetectionCategories = {
+  'all': 'All Objects',
+  'people': 'People',
+  'vehicles': 'Vehicles',
+  'furniture': 'Furniture & Appliances',
+  'animals': 'Animals',
+  'accessories': 'Accessories',
+  'sports': 'Sports Equipment',
+  'kitchen': 'Kitchen & Food',
+  'electronics': 'Electronics',
+  'outdoor': 'Outdoor Fixtures',
+  'indoor': 'Indoor Items',
+};
+
+// Mapping from COCO object names (lowercase) to category keys
+const Map<String, String> cocoObjectToCategoryMap = {
+  // People
+  'person': 'people',
+  // Vehicles
+  'bicycle': 'vehicles',
+  'car': 'vehicles',
+  'motorcycle': 'vehicles',
+  'airplane': 'vehicles',
+  'bus': 'vehicles',
+  'train': 'vehicles',
+  'truck': 'vehicles',
+  'boat': 'vehicles',
+  // Outdoor Fixtures
+  'traffic light': 'outdoor',
+  'fire hydrant': 'outdoor',
+  'stop sign': 'outdoor',
+  'parking meter': 'outdoor',
+  'bench': 'outdoor',
+  // Animals
+  'bird': 'animals',
+  'cat': 'animals',
+  'dog': 'animals',
+  'horse': 'animals',
+  'sheep': 'animals',
+  'cow': 'animals',
+  'elephant': 'animals',
+  'bear': 'animals',
+  'zebra': 'animals',
+  'giraffe': 'animals',
+  // Accessories
+  'backpack': 'accessories',
+  'umbrella': 'accessories',
+  'handbag': 'accessories',
+  'tie': 'accessories',
+  'suitcase': 'accessories',
+  // Sports
+  'frisbee': 'sports',
+  'skis': 'sports',
+  'snowboard': 'sports',
+  'sports ball': 'sports',
+  'kite': 'sports',
+  'baseball bat': 'sports',
+  'baseball glove': 'sports',
+  'skateboard': 'sports',
+  'surfboard': 'sports',
+  'tennis racket': 'sports',
+  // Kitchen & Food
+  'bottle': 'kitchen',
+  'wine glass': 'kitchen',
+  'cup': 'kitchen',
+  'fork': 'kitchen',
+  'knife': 'kitchen',
+  'spoon': 'kitchen',
+  'bowl': 'kitchen',
+  'banana': 'kitchen',
+  'apple': 'kitchen',
+  'sandwich': 'kitchen',
+  'orange': 'kitchen',
+  'broccoli': 'kitchen',
+  'carrot': 'kitchen',
+  'hot dog': 'kitchen',
+  'pizza': 'kitchen',
+  'donut': 'kitchen',
+  'cake': 'kitchen',
+  'sink': 'kitchen', // Often in kitchen
+  // Furniture & Appliances
+  'chair': 'furniture',
+  'couch': 'furniture',
+  'bed': 'furniture',
+  'dining table': 'furniture',
+  'refrigerator': 'furniture', // Appliance grouped
+  'oven': 'furniture', // Appliance grouped
+  'toaster': 'furniture', // Appliance grouped
+  'microwave': 'furniture', // Appliance grouped
+   'toilet': 'indoor', // Moved to indoor
+  // Electronics
+  'tv': 'electronics',
+  'laptop': 'electronics',
+  'mouse': 'electronics',
+  'remote': 'electronics',
+  'keyboard': 'electronics',
+  'cell phone': 'electronics',
+  // Indoor Misc
+  'book': 'indoor',
+  'clock': 'indoor',
+  'vase': 'indoor',
+  'scissors': 'indoor',
+  'teddy bear': 'indoor',
+  'hair drier': 'furniture', // Grouped with appliances
+  'toothbrush': 'indoor',
+  'potted plant': 'indoor', // Often indoor
+};
+
 
 class SettingsService {
   static const String _ocrLanguageKey = 'ocr_language';
   static const String _ttsVolumeKey = 'tts_volume';
   static const String _ttsPitchKey = 'tts_pitch';
   static const String _ttsRateKey = 'tts_rate';
+  static const String _objectCategoryKey = 'object_category'; // New key
+
 
   static String getValidatedDefaultLanguage() {
     return supportedOcrLanguages.containsKey(defaultOcrLanguage)
@@ -41,6 +159,7 @@ class SettingsService {
   Future<SharedPreferences> _getPrefs() async {
     return await SharedPreferences.getInstance();
   }
+
 
   Future<String> getOcrLanguage() async {
     try {
@@ -74,6 +193,7 @@ class SettingsService {
       debugPrint('[SettingsService] Error saving OCR language: $e');
     }
   }
+
 
   Future<double> getTtsVolume() async {
     try {
@@ -158,4 +278,38 @@ class SettingsService {
       debugPrint('[SettingsService] Error saving TTS Rate: $e');
     }
   }
+
+
+  Future<String> getObjectDetectionCategory() async {
+      try {
+        final prefs = await _getPrefs();
+        final savedCategory = prefs.getString(_objectCategoryKey);
+        if (savedCategory != null && objectDetectionCategories.containsKey(savedCategory)) {
+          debugPrint('[SettingsService] Loaded Object Category: $savedCategory');
+          return savedCategory;
+        } else {
+           debugPrint('[SettingsService] Invalid/No Object Category found, returning default: $defaultObjectCategory');
+           await prefs.setString(_objectCategoryKey, defaultObjectCategory);
+           return defaultObjectCategory;
+        }
+      } catch (e) {
+        debugPrint('[SettingsService] Error loading Object Category: $e. Returning default.');
+        return defaultObjectCategory;
+      }
+  }
+
+  Future<void> setObjectDetectionCategory(String categoryKey) async {
+      if (!objectDetectionCategories.containsKey(categoryKey)) {
+          debugPrint('[SettingsService] Attempted to save unsupported object category: $categoryKey');
+          return;
+      }
+      try {
+        final prefs = await _getPrefs();
+        await prefs.setString(_objectCategoryKey, categoryKey);
+        debugPrint('[SettingsService] Saved Object Category: $categoryKey');
+      } catch (e) {
+        debugPrint('[SettingsService] Error saving Object Category: $e');
+      }
+  }
+
 }

@@ -6,7 +6,7 @@ import 'package:camera/camera.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 
 class WebSocketService {
-  final String _serverUrl = 'http://xyz:5000'; // Replace xyz with your actual backend IP
+  final String _serverUrl = 'http://192.168.70.126:5000'; // Replace xyz with your actual backend IP
 
   io.Socket? _socket;
   final StreamController<Map<String, dynamic>> _responseController =

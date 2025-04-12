@@ -17,6 +17,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   double _ttsVolume = defaultTtsVolume;
   double _ttsPitch = defaultTtsPitch;
   double _ttsRate = defaultTtsRate;
+  String _selectedObjectCategory = defaultObjectCategory; // New state variable
 
   bool _isLoading = true;
   bool _ttsInitialized = false;
@@ -41,6 +42,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final loadedVolume = await _settingsService.getTtsVolume();
     final loadedPitch = await _settingsService.getTtsPitch();
     final loadedRate = await _settingsService.getTtsRate();
+    final loadedCategory = await _settingsService.getObjectDetectionCategory(); // Load category
 
     if (!_ttsInitialized) {
        await _ttsPreviewService.initTts(
@@ -61,6 +63,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _ttsVolume = loadedVolume;
           _ttsPitch = loadedPitch;
           _ttsRate = loadedRate;
+          _selectedObjectCategory = objectDetectionCategories.containsKey(loadedCategory)
+                                    ? loadedCategory
+                                    : defaultObjectCategory; // Set category state
           _isLoading = false;
        });
     }
@@ -102,6 +107,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
      }
   }
 
+  Future<void> _updateObjectCategory(String? newCategoryKey) async { // New method
+    if (newCategoryKey != null && newCategoryKey != _selectedObjectCategory) {
+      await _settingsService.setObjectDetectionCategory(newCategoryKey);
+      if(mounted) {
+        setState(() {
+          _selectedObjectCategory = newCategoryKey;
+        });
+        _showConfirmationSnackBar('Object Detection Category set to ${objectDetectionCategories[newCategoryKey] ?? newCategoryKey}');
+      }
+    }
+  }
+
   void _previewTts(String settingName) {
       if (_ttsInitialized) {
           _ttsPreviewService.speak("This is the new $settingName setting.");
@@ -132,6 +149,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: <Widget>[
                 _buildOcrLanguageSetting(),
                 const Divider(height: 20),
+                _buildObjectCategorySetting(), // Add category dropdown
+                const Divider(height: 20),
                 _buildTtsSettingsHeader(),
                 _buildTtsVolumeSetting(),
                 _buildTtsPitchSetting(),
@@ -147,7 +166,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return ListTile(
       leading: const Icon(Icons.translate),
       title: const Text('Text Recognition Language'),
-      subtitle: Text('Select the primary language for OCR (${supportedOcrLanguages[_selectedOcrLanguage] ?? _selectedOcrLanguage})'),
+      subtitle: Text('Select language for OCR (${supportedOcrLanguages[_selectedOcrLanguage] ?? _selectedOcrLanguage})'),
       trailing: DropdownButton<String>(
         value: _selectedOcrLanguage,
         onChanged: _selectedOcrLanguage == null ? null : _updateOcrLanguage,
@@ -160,6 +179,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
   }
+
+  // New Widget for Object Category Setting
+  Widget _buildObjectCategorySetting() {
+    return ListTile(
+      leading: const Icon(Icons.category),
+      title: const Text('Object Detection Filter'),
+      subtitle: Text('Show only: ${objectDetectionCategories[_selectedObjectCategory] ?? 'Unknown'}'),
+      trailing: DropdownButton<String>(
+        value: _selectedObjectCategory,
+        onChanged: _updateObjectCategory, // Use the new update function
+        items: objectDetectionCategories.entries.map((entry) {
+          return DropdownMenuItem<String>(
+            value: entry.key,
+            child: Text(entry.value),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
 
   Widget _buildTtsSettingsHeader() {
      return const ListTile(
@@ -261,12 +300,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           showAboutDialog(
              context: context,
              applicationName: 'VisionAid Companion',
-             applicationVersion: '1.0.1+tts',
+             applicationVersion: '1.0.2+filter',
              applicationIcon: const Icon(Icons.visibility),
              children: [
                 const Padding(
                   padding: EdgeInsets.only(top: 15),
-                  child: Text('Assistive technology application with TTS.'),
+                  child: Text('Assistive technology application with TTS and object filtering.'),
                 )
              ]
           );
