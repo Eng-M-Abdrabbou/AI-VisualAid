@@ -25,30 +25,25 @@ It was entirely made for IEEE competition 2025, and accroding to the requirement
 
 ### this part is under construction 
 
-*   **Carousel Navigation:** Show swiping between feature pages.
-    ```
-    [ GIF/Image of Carousel Swiping]
-    ```
-*   **Object Detection:** Show the camera view with an object identified and maybe the spoken output overlayed (if possible in a GIF).
-    ```
-    [GIF/Image of Object Detection]
-    ```
-*   **Hazard Detection:** Show the alert state (e.g., red text overlay, vibration indicator) for a detected hazard.
-    ```
-    [GIF/Image of Hazard Detection Alert]
-    ```
-*   **Text Reading:** Show the camera pointing at text and the recognized text displayed/spoken.
-    ```
-    [GIF/Image of Text Reading]
-    ```
-*   **Barcode Scanning:** Show the viewfinder scanning a barcode and the resulting product info.
-    ```
-    [GIF/Image of Barcode Scanning]
-    ```
-*   **Settings Screen:** Show the different options available (TTS sliders, OCR language dropdown).
-    ```
-    [Image of Settings Screen]
-    ```
+*   ### Object Detection: 
+    ![Object Detection](/Images/A(2).jpeg)
+    
+*   ### Hazard Detection: 
+    ![Hazard Detection](Images/A(4).jpeg)
+    ![Hazard Detection](Images/A(5).jpeg)
+    ![Hazard Detection](Images/A(7).jpeg)
+
+*   ### Text Reading: 
+    ![Text Reading](Images/A(10).jpeg)
+
+*   ### Barcode Scanning: 
+    ![Barcode Scanning](Images/A(6).jpeg)
+
+<!-- *   ### Settings Screen: 
+    ![Settings Screen](Images/A(6).jpeg)
+
+*   ### Voice Control: 
+    ![Voice Control](Images/A(7).jpeg) -->
 
 ## Technology Stack
 
