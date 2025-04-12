@@ -87,7 +87,7 @@ It was entirely made for IEEE competition 2025, and accroding to the requirement
 *   **Models:**
     *   YOLOv5n (Object/Hazard Detection)
     *   Places365 (ResNet50) (Scene Description)
-    *   EasyOCR Models (Text Reading)
+    *   Tesseract Engine (Text Reading)
 
 ## Prerequisites
 
@@ -100,7 +100,7 @@ It was entirely made for IEEE competition 2025, and accroding to the requirement
 *   **Backend Model Files:**
     *   YOLOv5 weights will be downloaded automatically by `torch.hub`.
     *   Places365 weights (`resnet50_places365.pth.tar`) and labels (`categories_places365.txt`) will be downloaded automatically by the Python script on first run if not present.
-    *   EasyOCR language models will be downloaded automatically on first use for each configured language. **This can take a significant amount of time and requires considerable disk space and RAM.**
+    *   Tesseract Engine language models will be downloaded automatically on first use for each configured language. **This can take a significant amount of time and requires considerable disk space and RAM.**
 
 ## Setup Instructions
 
