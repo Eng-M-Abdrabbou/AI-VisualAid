@@ -2,25 +2,25 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
 
 const Map<String, String> supportedOcrLanguages = {
-  'en': 'English',
-  'ar': 'Arabic',
-  'fa': 'Persian (Farsi)',
-  'ur': 'Urdu',
-  'ug': 'Uyghur',
-  'hi': 'Hindi',
-  'mr': 'Marathi',
-  'ne': 'Nepali',
-  'ru': 'Russian',
-  'ch_sim': 'Chinese (Simplified)',
-  'ch_tra': 'Chinese (Traditional)',
-  'ja': 'Japanese',
-  'ko': 'Korean',
-  'te': 'Telugu',
-  'kn': 'Kannada',
-  'bn': 'Bengali',
+  'eng': 'English',
+  'ara': 'Arabic',
+  'fas': 'Persian (Farsi)',
+  'urd': 'Urdu',
+  'uig': 'Uyghur',
+  'hin': 'Hindi',
+  'mar': 'Marathi',
+  'nep': 'Nepali',
+  'rus': 'Russian',
+  'chi_sim': 'Chinese (Simplified)',
+  'chi_tra': 'Chinese (Traditional)',
+  'jpn': 'Japanese',
+  'kor': 'Korean',
+  'tel': 'Telugu',
+  'kan': 'Kannada',
+  'ben': 'Bengali',
 };
 
-const String defaultOcrLanguage = 'en';
+const String defaultOcrLanguage = 'eng'; 
 
 const double defaultTtsVolume = 0.8;
 const double defaultTtsPitch = 1.0;
