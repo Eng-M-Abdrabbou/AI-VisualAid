@@ -344,7 +344,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _cameraController = newController;
         initFuture = newController.initialize();
         _initializeControllerFuture = initFuture;
-        if(mounted) setState((){});
+        // if(mounted) setState((){});
 
      } catch (e) {
          debugPrint("[HomeScreen] Error assigning initialize future: $e");
@@ -364,7 +364,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
        if (!mounted) {
            debugPrint("[HomeScreen] Widget unmounted during camera initialization, disposing new controller.");
            try { await newController.dispose(); } catch (_) {}
-           _isMainCameraInitializing = false;
+          //  _isMainCameraInitializing = false;
            return;
        }
        if (_cameraController == newController) {
@@ -918,21 +918,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
      Widget cameraDisplayWidget;
      if (isBarcodePage) {
-       cameraDisplayWidget = Container(key: const ValueKey('barcode_placeholder'), color: Colors.black);
-     } else if (_cameraController != null && _initializeControllerFuture != null && !_isMainCameraInitializing) {
-        cameraDisplayWidget = CameraViewWidget(
-                      key: _cameraViewKey, // Use the key here
-                      cameraController: _cameraController,
-                      initializeControllerFuture: _initializeControllerFuture,
-                   );
+       cameraDisplayWidget = Container(color: Colors.black); // Barcode page handles its own camera
+    } else if (_isMainCameraInitializing) {
+       cameraDisplayWidget = Container( // Show loading indicator while initializing
+           key: const ValueKey('placeholder_initializing'),
+           color: Colors.black,
+           child: const Center(child: CircularProgressIndicator(color: Colors.white,)));
+    } else if (_cameraController != null && _initializeControllerFuture != null) {
+       cameraDisplayWidget = CameraViewWidget( // Show camera view if ready
+                     key: _cameraViewKey, // Use key to force rebuild
+             cameraController: _cameraController,
+             initializeControllerFuture: _initializeControllerFuture,
+           );
      } else {
-        cameraDisplayWidget = Container( // Show loading indicator or placeholder
-                      key: ValueKey('placeholder_${_isMainCameraInitializing}_${_cameraController == null}'),
-                      color: Colors.black,
-                      child: _isMainCameraInitializing
-                           ? const Center(child: CircularProgressIndicator(color: Colors.white,))
-                           : const Center(child: Text("Camera initializing...", style: TextStyle(color: Colors.white54))),
-                  );
+              cameraDisplayWidget = Container( // Fallback / Error state
+                     key: const ValueKey('placeholder_error'),
+                     color: Colors.black,
+                     child: const Center(child: Text("Camera unavailable", style: TextStyle(color: Colors.red)))
+                     );
      }
 
 
@@ -942,12 +945,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         fit: StackFit.expand,
         children: [
 
+          cameraDisplayWidget, // Use the determined widget
 
           // Use AnimatedSwitcher for smoother visual transition
-          AnimatedSwitcher(
-             duration: const Duration(milliseconds: 300),
-             child: cameraDisplayWidget,
-          ),
+          // AnimatedSwitcher(
+          //    duration: const Duration(milliseconds: 300),
+          //    child: cameraDisplayWidget,
+          // ),
 
 
           PageView.builder(
@@ -977,7 +981,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
               // Update page index state FIRST
               if(mounted) {
-                setState(() { _currentPage = newPageIndex; });
+                // setState(() { _currentPage = newPageIndex; });
+
+                                setState(() {
+                  _currentPage = newPageIndex;
+                  _isProcessingImage = false; _lastRequestedFeatureId = null;
+                  // Clear previous page results
+                  if (previousFeature.id == objectDetectionFeature.id) { _lastObjectResult = ""; }
+                  else if (previousFeature.id == hazardDetectionFeature.id) { _hazardAlertClearTimer?.cancel(); _clearHazardAlert(); _lastHazardRawResult = ""; }
+                  else if (previousFeature.id != barcodeScannerFeature.id) { _lastSceneTextResult = ""; }
+                });
+
               } else { return; }
 
 
@@ -992,28 +1006,45 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                    await _initializeMainCameraController(); // Calls setState internally in finally block
                    debugPrint("Main camera initialization attempt completed.");
                    // NO extra setState or postFrameCallback needed here, init function handles it
+
+                   
+                   // Schedule final check/update/timer start for next frame
+                   WidgetsBinding.instance.addPostFrameCallback((_) {
+                       if(mounted){
+                           bool isCamReadyNow = _cameraControllerCheck(showError: false);
+                           setState((){}); // Force final UI update
+                           debugPrint("Post-init callback: Camera ready=$isCamReadyNow. Forcing UI Update.");
+                           if (isCamReadyNow) _startDetectionTimerIfNeeded();
+                       }
+                   });
                }
 
+               // Start timer if switching between non-barcode realtime pages
 
-              if(mounted) {
-                // Clear previous page results AFTER camera ops complete
-                setState(() {
-                  _isProcessingImage = false; _lastRequestedFeatureId = null;
-                  if (previousFeature.id == objectDetectionFeature.id) { _lastObjectResult = ""; }
-                  else if (previousFeature.id == hazardDetectionFeature.id) { _hazardAlertClearTimer?.cancel(); _clearHazardAlert(); _lastHazardRawResult = ""; }
-                  else if (previousFeature.id != barcodeScannerFeature.id) { _lastSceneTextResult = ""; }
-                });
+              //  }
 
-              } else {
-                 return;
-              }
+
+              // if(mounted) {
+              //   // Clear previous page results AFTER camera ops complete
+              //   setState(() {
+              //     _isProcessingImage = false; _lastRequestedFeatureId = null;
+              //     if (previousFeature.id == objectDetectionFeature.id) { _lastObjectResult = ""; }
+              //     else if (previousFeature.id == hazardDetectionFeature.id) { _hazardAlertClearTimer?.cancel(); _clearHazardAlert(); _lastHazardRawResult = ""; }
+              //     else if (previousFeature.id != barcodeScannerFeature.id) { _lastSceneTextResult = ""; }
+              //   });
+
+              // } else {
+              //    return;
+              // }
 
 
 
               final bool isNowRealtime = newFeature.id == objectDetectionFeature.id || newFeature.id == hazardDetectionFeature.id;
 
+              if (isNowRealtime && !isSwitchingFromBarcode) {
 
-              if (isNowRealtime) {
+              // if (isNowRealtime) {
+                
                    // Try starting timer AFTER the page transition logic
                    _startDetectionTimerIfNeeded();
                }
