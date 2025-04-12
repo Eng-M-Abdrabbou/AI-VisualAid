@@ -26,18 +26,25 @@ It was entirely made for IEEE competition 2025, and accroding to the requirement
 ### this part is under construction 
 
 *   ### Object Detection: 
-    ![Object Detection](/Images/A(2).jpeg)
+
+    <img src="/Images/A(2).jpeg" width="350" height="600" />
+
     
 *   ### Hazard Detection: 
-    ![Hazard Detection](Images/A(4).jpeg)
-    ![Hazard Detection](Images/A(5).jpeg)
-    ![Hazard Detection](Images/A(7).jpeg)
+
+    <img src="/Images/A(4).jpeg" width="350" height="600" />
+
+    <img src="/Images/A(5).jpeg" width="350" height="600" />
+
+    <img src="/Images/A(7).jpeg" width="350" height="600" />
 
 *   ### Text Reading: 
-    ![Text Reading](Images/A(10).jpeg)
+
+    <img src="/Images/A(10).jpeg" width="350" height="600" />
 
 *   ### Barcode Scanning: 
-    ![Barcode Scanning](Images/A(6).jpeg)
+
+    <img src="/Images/A(6).jpeg" width="350" height="600" />
 
 <!-- *   ### Settings Screen: 
     ![Settings Screen](Images/A(6).jpeg)
