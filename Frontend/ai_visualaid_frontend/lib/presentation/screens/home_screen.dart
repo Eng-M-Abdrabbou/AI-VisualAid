@@ -1181,6 +1181,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           if (newPageRequiresCamera) {
              debugPrint("[Navigation] Switching FROM barcode/focus TO a page needing camera (${newFeature.id}) - initializing main camera..."); // Updated log
              await _initializeMainCameraController();
+             _initializeMainCameraController();
+             setState(() {});
           } else {
               debugPrint("[Navigation] Switching FROM barcode/focus, but new page (${newFeature.id}) doesn't need camera immediately."); // Added log
           }
