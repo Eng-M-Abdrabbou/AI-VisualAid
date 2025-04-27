@@ -114,7 +114,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // --- Constants ------------------------------------------------------------------------------------------
   static const String _alertSoundPath = "audio/alert.mp3"; // For hazard alerts
   static const String _beepSoundPath = "assets/audio/short_beep.mp3"; // For focus mode - PATH MUST MATCH pubspec.yaml and actual file location
-  static const Duration _detectionInterval = Duration(seconds: 1);
+  static const Duration _detectionInterval = Duration(seconds: 3);
   static const Duration _hazardAlertPersistence = Duration(seconds: 4);
   static const Duration _focusFoundAnnounceCooldown = Duration(seconds: 5); // Cooldown for saying "found"
   static const double _focusCenterThreshold = 0.15; // Normalized distance from center to be considered "centered"
@@ -450,9 +450,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
              ?.map((d) => (d as Map<String, dynamic>)['name'] as String? ?? '')
              .where((name) => name.isNotEmpty)
              .toList() ?? [];
-         _processHazardDetection(currentDetections);
-     } else if (featureId == hazardDetectionFeature.id) {
-        // If hazard has its own explicit call type, handle it here
+        // _processHazardDetection(currentDetections);
+     } else if (featureId == hazardDetectionFeature.id && status == 'ok') {
+        // Process hazard detection results when on the Hazard Detection page
+        List<String> currentDetections = (resultData['detections'] as List<dynamic>?)
+            ?.map((d) => (d as Map<String, dynamic>)['name'] as String? ?? '')
+            .where((name) => name.isNotEmpty)
+            .toList() ?? [];
+        _processHazardDetection(currentDetections);
      }
      // --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 
